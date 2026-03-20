@@ -1,0 +1,35 @@
+{
+  "entities": {
+    "SavedStrategy": {
+      "title": "Saved Strategy",
+      "description": "A course strategy saved by a user",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "The user ID of the owner"
+        },
+        "strategy": {
+          "type": "object",
+          "description": "The course strategy data"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the strategy was saved"
+        }
+      },
+      "required": ["uid", "strategy", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/saved_strategies/{strategyId}": {
+      "schema": "SavedStrategy",
+      "description": "Collection of saved course strategies"
+    },
+    "/saved_strategies/{strategyId}/versions/{versionId}": {
+      "schema": "SavedStrategy",
+      "description": "History of versions for a strategy"
+    }
+  }
+}

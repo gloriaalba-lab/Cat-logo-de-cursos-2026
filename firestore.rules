@@ -1,0 +1,74 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: saved_strategies
+    // Document ID: auto-generated
+    // Fields:
+    //   - uid: string (required) - The user ID of the owner
+    //   - strategy: map (required) - The course strategy data
+    //   - createdAt: timestamp (required) - When the strategy was saved
+    //   - updatedAt: timestamp (optional) - When the strategy was last updated
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.uid;
+    }
+    
+    function uidUnchanged() {
+      return !('uid' in request.resource.data) || request.resource.data.uid == request.auth.uid;
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function isValidStrategy(data) {
+      return data.keys().hasAny(['uid', 'strategy', 'createdAt']) &&
+             data.uid is string &&
+             data.strategy is map &&
+             data.createdAt is timestamp;
+    }
+
+    function isParentOwner(strategyId) {
+      return isAuthenticated() && get(/databases/$(database)/documents/saved_strategies/$(strategyId)).data.uid == request.auth.uid;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /saved_strategies/{strategyId} {
+      allow read: if isDocOwner();
+      allow create: if isAuthenticated() && uidUnchanged() && isValidStrategy(request.resource.data);
+      allow delete: if isDocOwner();
+      allow update: if isDocOwner() && uidUnchanged() && isValidStrategy(request.resource.data);
+
+      match /versions/{versionId} {
+        allow read: if isParentOwner(strategyId);
+        allow create: if isParentOwner(strategyId) && isValidStrategy(request.resource.data);
+      }
+    }
+
+    match /users/{userId} {
+      allow read, write: if isOwner(userId);
+    }
+  }
+}
