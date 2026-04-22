@@ -25,6 +25,13 @@ export const StepCourse: React.FC<StepCourseProps> = ({ course, onBackToVariatio
   const [email, setEmail] = useState('');
   const [isSent, setIsSent] = useState(false);
 
+  const cleanModuleTitle = (title: string) => {
+    return title.replace(/^Módulo\s+\d+[:\s-]*/i, '').trim();
+  };
+
+  const isOverview = activeModuleIndex === -1;
+  const activeModule = !isOverview ? course.modules[activeModuleIndex] : null;
+
   const PRICE_PER_HOUR = 1990;
   const totalHours = course.modules.reduce((acc, m) => acc + m.hours, 0);
   const totalInvestment = totalHours * PRICE_PER_HOUR;
@@ -37,20 +44,13 @@ export const StepCourse: React.FC<StepCourseProps> = ({ course, onBackToVariatio
       maximumFractionDigits: 0,
     }).format(amount);
   };
-  
-  const cleanModuleTitle = (title: string) => {
-    return title.replace(/^Módulo\s+\d+[:\s-]*/i, '').trim();
-  };
-
-  const isOverview = activeModuleIndex === -1;
-  const activeModule = !isOverview ? course.modules[activeModuleIndex] : null;
 
   const handleSendProposal = (e: React.FormEvent) => {
     e.preventDefault();
     if (email) {
       setIsSent(true);
       setTimeout(() => {
-        alert(`Propuesta enviada a: ${email}. El Director recibirá el PDF formal en breve.`);
+        alert(`Propuesta enviada a: ${email}. El Director recibirá el PDF formal con la inversión de ${formatCurrency(totalInvestment)} MXN en breve.`);
       }, 500);
     }
   };
@@ -197,8 +197,12 @@ export const StepCourse: React.FC<StepCourseProps> = ({ course, onBackToVariatio
       <div className="space-y-6">
         <h2 className="text-4xl font-black text-slate-900 leading-tight">Excelente. Ya tengo la estructura técnica.</h2>
         <p className="text-xl text-slate-500 font-medium max-w-2xl mx-auto leading-relaxed">
-          Voy a generar la <span className="text-orange-600 font-bold">Propuesta Económica</span> y el <span className="text-orange-600 font-bold">Cronograma de Desarrollo</span> en un PDF formal.
+          Voy a generar la <span className="text-orange-600 font-bold">Propuesta Técnica</span> y el <span className="text-orange-600 font-bold">Cronograma de Desarrollo</span> en un PDF formal.
         </p>
+        <div className="inline-block px-8 py-4 bg-orange-50 border-2 border-orange-100 rounded-2xl">
+          <p className="text-[10px] font-black text-orange-400 uppercase tracking-widest mb-1">Inversión Total Estimada</p>
+          <p className="text-3xl font-black text-orange-600">{formatCurrency(totalInvestment)}</p>
+        </div>
       </div>
 
       <div className="bg-white p-10 rounded-[3rem] border border-slate-200 shadow-xl space-y-8">
@@ -368,12 +372,7 @@ export const StepCourse: React.FC<StepCourseProps> = ({ course, onBackToVariatio
                             <h1 className="text-5xl font-black text-slate-900 mb-8 leading-tight tracking-tighter">{course.title}</h1>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                            <div className="bg-orange-50/50 p-6 rounded-3xl border border-orange-100 text-center">
-                                <Clock className="w-8 h-8 text-orange-600 mx-auto mb-2" />
-                                <span className="block text-[10px] font-black text-orange-400 uppercase tracking-widest">Inversión Estimada</span>
-                                <span className="text-xl font-black text-orange-700">{formatCurrency(totalInvestment)}</span>
-                            </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div className="bg-slate-900 p-6 rounded-3xl border border-slate-800 text-center shadow-xl">
                                 <Award className="w-8 h-8 text-orange-400 mx-auto mb-2" />
                                 <span className="block text-[10px] font-black text-slate-500 uppercase tracking-widest">Garantía</span>
@@ -422,8 +421,11 @@ export const StepCourse: React.FC<StepCourseProps> = ({ course, onBackToVariatio
                             <button onClick={() => { setActiveModuleIndex(0); setActiveTab('LECTURA'); }} className="px-12 py-5 bg-orange-600 text-white text-xl font-black rounded-3xl shadow-2xl shadow-orange-100 hover:scale-105 transition-all flex items-center justify-center gap-4">
                                 REVISAR TEMARIO <Play className="w-6 h-6 fill-current" />
                             </button>
-                            <button onClick={() => setActiveTab('PROPUESTA')} className="px-12 py-5 bg-slate-900 text-white text-xl font-black rounded-3xl shadow-2xl shadow-slate-100 hover:scale-105 transition-all flex items-center justify-center gap-4">
-                                ESTÁ PERFECTO <CheckCircle2 className="w-6 h-6 text-orange-500" />
+                            <button onClick={() => setActiveTab('PROPUESTA')} className="px-12 py-5 bg-slate-900 text-white text-xl font-black rounded-3xl shadow-2xl shadow-slate-100 hover:scale-105 transition-all flex items-center justify-center gap-4 text-center">
+                                <div>
+                                   <span className="block text-[10px] text-orange-400 uppercase tracking-widest mb-1">Inversión: {formatCurrency(totalInvestment)}</span>
+                                   ESTÁ PERFECTO <CheckCircle2 className="w-6 h-6 text-orange-500 inline-block ml-2" />
+                                </div>
                             </button>
                         </div>
                     </div>

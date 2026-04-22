@@ -184,6 +184,71 @@ async function startServer() {
     }
   });
 
+  // --- HUBSPOT CRM SYNC ---
+  app.post("/api/crm/sync", async (req, res) => {
+    const { email, firstName, lastName, photoUrl } = req.body;
+    const accessToken = process.env.HUBSPOT_ACCESS_TOKEN;
+
+    if (!accessToken) {
+      console.warn("HUBSPOT_ACCESS_TOKEN not set, skipping CRM sync");
+      return res.json({ success: true, message: "Sync skipped (no token)" });
+    }
+
+    try {
+      // 1. Search for contact by email
+      const searchResponse = await axios.post(
+        "https://api.hubapi.com/crm/v3/objects/contacts/search",
+        {
+          filterGroups: [
+            {
+              filters: [
+                {
+                  propertyName: "email",
+                  operator: "EQ",
+                  value: email
+                }
+              ]
+            }
+          ]
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json"
+          }
+        }
+      );
+
+      if (searchResponse.data.total > 0) {
+        return res.json({ success: true, message: "Contact already exists in HubSpot" });
+      }
+
+      // 2. Create contact if not found
+      await axios.post(
+        "https://api.hubapi.com/crm/v3/objects/contacts",
+        {
+          properties: {
+            email,
+            firstname: firstName,
+            lastname: lastName,
+            lifecyclestage: "lead"
+          }
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json"
+          }
+        }
+      );
+
+      res.json({ success: true, message: "Contact added to HubSpot" });
+    } catch (error: any) {
+      console.error("HubSpot Sync Error:", error.response?.data || error.message);
+      res.status(500).json({ success: false, message: "Error syncing with HubSpot" });
+    }
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     try {

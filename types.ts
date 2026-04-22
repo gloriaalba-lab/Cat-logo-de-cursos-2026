@@ -91,6 +91,8 @@ export interface CourseContext {
   targetCompany: string;
   specialFocus: string;
   preferredDuration: string;
+  desiredOutcome: string;
+  confirmedThemes?: string[];
   customTitle?: string;
   proposalFile?: {
     data: string;

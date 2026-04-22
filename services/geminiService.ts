@@ -189,6 +189,13 @@ REGLA DE TÍTULOS: No incluyas "Módulo 1", "Módulo 2", etc., en el título de 
   promptText += `- NIVEL SOLICITADO: ${context.depth}\n`;
   promptText += `- FOCO ESPECIAL: "${context.specialFocus}"\n`;
   promptText += `- DURACIÓN/HORAS SOLICITADAS: "${context.preferredDuration}"\n`;
+  if (context.desiredOutcome) {
+    promptText += `- RESULTADO DESEADO (Para definir el objetivo): "${context.desiredOutcome}"\n`;
+  }
+  if (context.confirmedThemes && context.confirmedThemes.length > 0) {
+    promptText += `\nTEMARIOS COMPROMETIDOS/TEMAS OBLIGATORIOS:\n${context.confirmedThemes.map((t, i) => `${i+1}. ${t}`).join('\n')}\n`;
+    promptText += `REGLA DE ESTRUCTURA: DEBES diseñar el temario (syllabus) basándote EXACTAMENTE en estos temas confirmados por el usuario. Puedes expandirlos con subtemas, pero los módulos principales deben coincidir con esta lista.\n`;
+  }
   promptText += `\nREGLA: El campo 'depth' en el JSON de respuesta debe ser exactamente: "${context.depth}".\n`;
   promptText += `\nREGLA DE ESTRUCTURA: Debes categorizar el curso en un 'area' (ej: Habilidades, Dirección, Tecnología) y una 'category' (ej: Cursos de mandos medios (CMM), Alta Dirección, Desarrollo Humano).\n`;
   promptText += `\nIMPORTANTE: Para cada beneficio en 'expectedResults', DEBES generar una entrada correspondiente en 'benefitImplementation' que explique el proceso paso a paso para lograrlo y cómo se medirá su éxito.\n`;
@@ -538,6 +545,51 @@ export const searchCatalogWithAI = async (topic: string, catalog: any[]): Promis
 
   try {
     return JSON.parse(text) as { id: string; reasoning: string }[];
+  } catch (e) {
+    return [];
+  }
+};
+
+export const generateThemesForCourse = async (context: CourseContext): Promise<string[]> => {
+  const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
+  if (!apiKey) {
+    console.error('API Key is missing');
+    throw new Error("La clave de API de Gemini no está configurada.");
+  }
+  const ai = new GoogleGenAI({ apiKey: apiKey });
+  
+  const prompt = `Como Consultor Instruccional Senior de Cademmy, genera una lista de los 6 a 8 TEMAS O MÓDULOS PRINCIPALES que debería tener un curso con los siguientes parámetros:
+  
+  - TEMA: "${context.topic}"
+  - NIVEL: "${context.depth}"
+  - AUDIENCIA: "${context.audience}"
+  - EMPRESA/SITUACIÓN: "${context.targetCompany}"
+  - FOCO ESPECIAL: "${context.specialFocus}"
+  - RESULTADO DESEADO: "${context.desiredOutcome}"
+  
+  REGLAS:
+  1. Deben ser títulos de temas profesionales y técnicos.
+  2. No incluyas números (ej. "Módulo 1").
+  3. Responde únicamente con un arreglo JSON de strings.`;
+
+  const response = await ai.models.generateContent({
+    model: 'gemini-3-flash-preview',
+    contents: prompt,
+    config: { 
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: Type.ARRAY,
+        items: { type: Type.STRING }
+      },
+      temperature: 0.4
+    }
+  });
+
+  const text = response.text?.trim();
+  if (!text) return [];
+
+  try {
+    return JSON.parse(text) as string[];
   } catch (e) {
     return [];
   }

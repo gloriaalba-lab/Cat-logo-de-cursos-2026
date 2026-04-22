@@ -1,26 +1,71 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
-import { getFirestore, collection, addDoc, serverTimestamp, query, where, onSnapshot, orderBy, deleteDoc, doc, getDocFromServer } from 'firebase/firestore';
+import { 
+  getAuth, 
+  GoogleAuthProvider, 
+  OAuthProvider, 
+  signInWithPopup, 
+  signOut, 
+  createUserWithEmailAndPassword, 
+  signInWithEmailAndPassword, 
+  sendEmailVerification 
+} from 'firebase/auth';
+import { initializeFirestore, collection, addDoc, serverTimestamp, query, where, onSnapshot, orderBy, deleteDoc, doc, getDoc, getDocFromServer } from 'firebase/firestore';
 import firebaseConfig from './firebase-applet-config.json';
 
 // Initialize Firebase SDK
 const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+export const db = initializeFirestore(app, {
+  experimentalForceLongPolling: true,
+});
 export const auth = getAuth(app);
-export const googleProvider = new GoogleAuthProvider();
 
-export { signInWithPopup, signOut };
+// Admin check logic
+export const checkIsAdmin = async (email: string | null): Promise<boolean> => {
+  if (!email) return false;
+  
+  const normalizedEmail = email.toLowerCase().trim();
+  console.log("Checking admin status for:", normalizedEmail);
+  
+  // Bootstrap admins
+  if (normalizedEmail === "gloria@cademmy.com" || normalizedEmail === "gloriaalbamx@google.com") {
+    console.log("Admin status: TRUE (Bootstrap)");
+    return true;
+  }
+  
+  try {
+    const adminDoc = await getDoc(doc(db, 'admin_emails', normalizedEmail));
+    const isRegisteredAdmin = adminDoc.exists();
+    console.log("Admin status:", isRegisteredAdmin ? "TRUE (Registered)" : "FALSE");
+    return isRegisteredAdmin;
+  } catch (error) {
+    console.error("Error checking admin status:", error);
+    return false;
+  }
+};
+export const googleProvider = new GoogleAuthProvider();
+googleProvider.setCustomParameters({ prompt: 'select_account' });
+
+export const microsoftProvider = new OAuthProvider('microsoft.com');
+microsoftProvider.addScope('openid');
+microsoftProvider.addScope('profile');
+microsoftProvider.addScope('email');
+microsoftProvider.setCustomParameters({ prompt: 'select_account' });
+
+export { signInWithPopup, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendEmailVerification };
 
 // Validate Connection to Firestore
 async function testConnection() {
+  // Wait a bit to ensure initialization is fully complete
+  await new Promise(resolve => setTimeout(resolve, 2000));
   try {
     // Attempt to fetch a non-existent document to test connectivity
     await getDocFromServer(doc(db, 'test', 'connection'));
+    console.log("Firestore connection test successful.");
   } catch (error) {
+    console.error("Firestore connection test failed:", error);
     if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.error("Please check your Firebase configuration. The client is offline.");
+      console.error("Please check your Firebase configuration. The client is offline. This often means the project ID is incorrect or Firestore hasn't been initialized in the console.");
     }
-    // Skip logging for other errors, as this is simply a connection test.
   }
 }
 testConnection();

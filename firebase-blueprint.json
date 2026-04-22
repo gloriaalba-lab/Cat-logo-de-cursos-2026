@@ -1,5 +1,27 @@
 {
   "entities": {
+    "Admin": {
+      "title": "Administrator",
+      "description": "A user with administrative privileges",
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "The email address of the administrator"
+        },
+        "addedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "When the admin was added"
+        },
+        "addedBy": {
+          "type": "string",
+          "description": "UID of the admin who added this one"
+        }
+      },
+      "required": ["email", "addedAt"]
+    },
     "SavedStrategy": {
       "title": "Saved Strategy",
       "description": "A course strategy saved by a user",
@@ -23,6 +45,10 @@
     }
   },
   "firestore": {
+    "/admin_emails/{emailId}": {
+      "schema": "Admin",
+      "description": "Collection of authorized administrator emails"
+    },
     "/saved_strategies/{strategyId}": {
       "schema": "SavedStrategy",
       "description": "Collection of saved course strategies"

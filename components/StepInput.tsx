@@ -1,9 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Logo } from './Logo';
-import { Sparkles, Upload, ShieldCheck, Zap, GraduationCap, Users, FileText, X, FileUp, Building2, MessageSquare, HelpCircle, Clock, Search, ArrowRight, CheckCircle2, BookOpen, Calendar } from 'lucide-react';
+import { Sparkles, Upload, ShieldCheck, Zap, GraduationCap, Users, FileText, X, FileUp, Building2, MessageSquare, HelpCircle, Clock, Search, ArrowRight, CheckCircle2, BookOpen, Calendar, Target, Plus, Trash2, Edit2, ArrowUp, ArrowDown } from 'lucide-react';
 import { Course, CourseContext } from '../types';
 import { courseCatalog, CatalogCourse } from '../src/data/catalog';
-import { generateTitleSuggestions, searchCatalogWithAI } from '../services/geminiService';
+import { generateTitleSuggestions, searchCatalogWithAI, generateThemesForCourse } from '../services/geminiService';
 
 interface StepInputProps {
   onStart: (context: CourseContext) => void;
@@ -27,6 +27,11 @@ export const StepInput: React.FC<StepInputProps> = ({
   const [targetCompany, setTargetCompany] = useState(initialContext?.targetCompany || '');
   const [specialFocus, setSpecialFocus] = useState(initialContext?.specialFocus || '');
   const [preferredDuration, setPreferredDuration] = useState(initialContext?.preferredDuration || '');
+  const [desiredOutcome, setDesiredOutcome] = useState(initialContext?.desiredOutcome || '');
+  const [confirmedThemes, setConfirmedThemes] = useState<string[]>(initialContext?.confirmedThemes || []);
+  const [isGeneratingThemes, setIsGeneratingThemes] = useState(false);
+  const [editingThemeIndex, setEditingThemeIndex] = useState<number | null>(null);
+  const [newThemeValue, setNewThemeValue] = useState('');
   const [proposalFile, setProposalFile] = useState<CourseContext['proposalFile'] | null>(initialContext?.proposalFile || null);
   const [activeHelp, setActiveHelp] = useState<string | null>(null);
   const [showUploadChoice, setShowUploadChoice] = useState(false);
@@ -41,8 +46,18 @@ export const StepInput: React.FC<StepInputProps> = ({
   const [proposalData, setProposalData] = useState<any>(null);
   const [loadingMessage, setLoadingMessage] = useState('ANALIZANDO PARÁMETROS...');
 
+  const PRICE_PER_HOUR = 1990;
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('es-MX', {
+      style: 'currency',
+      currency: 'MXN',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(amount);
+  };
+
   useEffect(() => {
-    const isLoadingAny = isLoading || isLoadingSuggestions || isSearchingCatalog;
+    const isLoadingAny = isLoading || isLoadingSuggestions || isSearchingCatalog || isGeneratingThemes;
     
     if (!isLoadingAny) {
       setLoadingMessage('ANALIZANDO PARÁMETROS...');
@@ -59,7 +74,15 @@ export const StepInput: React.FC<StepInputProps> = ({
       'CASI LISTO, DANDO ÚLTIMOS TOQUES...',
     ];
 
-    if (isLoadingSuggestions) {
+    if (isGeneratingThemes) {
+      messages = [
+        'MAPEO DE TEMAS ESTRATÉGICOS...',
+        'ANALIZANDO COMPETENCIAS REQUERIDAS...',
+        'ESTRUCTURANDO RUTA DE APRENDIZAJE...',
+        'DEFINIENDO MÓDULOS DEL CURSO...',
+        'CONSULTANDO MEJORES PRÁCTICAS...',
+      ];
+    } else if (isLoadingSuggestions) {
       messages = [
         'BUSCANDO EN EL REPOSITORIO...',
         'ANALIZANDO TENDENCIAS...',
@@ -157,33 +180,34 @@ export const StepInput: React.FC<StepInputProps> = ({
     specialFocus.trim().length > 0 &&
     topic.trim().length > 0 &&
     audience.trim().length > 0 &&
-    preferredDuration.trim().length > 0;
+    preferredDuration.trim().length > 0 &&
+    desiredOutcome.trim().length > 0;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
-    console.log('Form submitted. isFormValid:', isFormValid);
     if (isFormValid) {
-      console.log('Calling onStart with params:', {
-        topic: topic.trim(),
-        audience: audience.trim(),
-        depth,
-        targetCompany: targetCompany.trim(),
-        specialFocus: specialFocus.trim(),
-        preferredDuration: preferredDuration.trim(),
-        customTitle: customTitle.trim() || undefined,
-        proposalFile: proposalFile || undefined
-      });
-      onStart({
-        topic: topic.trim(),
-        audience: audience.trim(),
-        depth,
-        targetCompany: targetCompany.trim(),
-        specialFocus: specialFocus.trim(),
-        preferredDuration: preferredDuration.trim(),
-        customTitle: customTitle.trim() || undefined,
-        proposalFile: proposalFile || undefined
-      });
+      setIsGeneratingThemes(true);
+      try {
+        const themeSuggestions = await generateThemesForCourse({
+          topic,
+          audience,
+          depth,
+          targetCompany,
+          specialFocus,
+          preferredDuration,
+          desiredOutcome,
+          customTitle: customTitle || undefined,
+          proposalFile: proposalFile || undefined
+        });
+        setConfirmedThemes(themeSuggestions);
+        setFormStep(1.9); // Step for editing themes
+      } catch (error) {
+        console.error("Error generating themes:", error);
+        setFormError("Error al generar temas iniciales. Reintentando...");
+      } finally {
+        setIsGeneratingThemes(false);
+      }
     } else {
       // If form is not valid, try to show which fields are missing
       const missing = [];
@@ -200,14 +224,14 @@ export const StepInput: React.FC<StepInputProps> = ({
     }
   };
 
-  const handleCatalogSearch = async (e: React.FormEvent) => {
+  const handleUnifiedSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!topic.trim()) return;
 
     setIsSearchingCatalog(true);
-    setShowCatalogModal(true); // Open modal immediately to show searching state
+    setShowCatalogModal(true); 
     
-    // First, do a basic keyword filter as a baseline
+    // 1. Keyword search (baseline)
     const keywordResults = courseCatalog.filter(course => 
       course.title.toLowerCase().includes(topic.toLowerCase()) ||
       course.category.toLowerCase().includes(topic.toLowerCase()) ||
@@ -219,44 +243,49 @@ export const StepInput: React.FC<StepInputProps> = ({
     );
 
     if (keywordResults.length > 0) {
-      setCatalogResults(keywordResults.map(r => ({ ...r, reasoning: 'Coincidencia directa por palabras clave.' })));
+      setCatalogResults(keywordResults.map(r => ({ ...r, reasoning: 'Coincidencia directa encontrada.' })));
     } else {
-      setCatalogResults([]); // Clear previous results while searching
+      setCatalogResults([]);
     }
 
     try {
-      // Then, use AI to find semantic relationships and reasoning in the background
+      // 2. AI Semantic Search in Catalog
       const aiResults = await searchCatalogWithAI(topic, courseCatalog);
       
-      // Merge results: prioritize keyword matches but include AI reasoned ones
       const mergedResults = courseCatalog
         .map(course => {
           const aiMatch = aiResults.find(r => r.id === course.id);
           const isKeywordMatch = keywordResults.some(r => r.id === course.id);
           
           if (aiMatch || isKeywordMatch) {
-            const result: CatalogCourse & { reasoning?: string } = {
+            return {
               ...course,
               reasoning: aiMatch?.reasoning || (isKeywordMatch ? 'Coincidencia directa por palabras clave.' : undefined)
-            };
-            return result;
+            } as CatalogCourse & { reasoning?: string };
           }
           return null;
         })
         .filter((c): c is (CatalogCourse & { reasoning?: string }) => c !== null);
 
       setCatalogResults(mergedResults);
-      // Always show the modal after AI search completes if it's not already open
-      // This ensures the user sees a "No results" message instead of "nothing happening"
-      if (!showCatalogModal) {
-        setShowCatalogModal(true);
+
+      // 3. Fallback logic: if NO catalog results found, automatically trigger repository suggestions as part of the unified process
+      if (mergedResults.length === 0) {
+        setIsSearchingCatalog(false); // Stop "searching catalog" loader
+        setIsLoadingSuggestions(true); // Start "repository" loader
+        try {
+          const suggestions = await generateTitleSuggestions(topic);
+          setTitleSuggestions(suggestions);
+          setShowCatalogModal(false); // Close catalog modal if we're moving to suggestions
+          setFormStep(1.5); // Move to suggestions view
+        } catch (suggestionError) {
+          console.error("Suggestion error:", suggestionError);
+        } finally {
+          setIsLoadingSuggestions(false);
+        }
       }
     } catch (error) {
-      console.error("Error searching catalog:", error);
-      // If AI fails and we haven't shown results yet, show the modal (it will show keyword results or empty state)
-      if (!showCatalogModal) {
-        setShowCatalogModal(true);
-      }
+      console.error("Error in unified search:", error);
     } finally {
       setIsSearchingCatalog(false);
     }
@@ -302,7 +331,6 @@ export const StepInput: React.FC<StepInputProps> = ({
       topic,
       level,
       hours: level === 'Básico' ? '8 horas' : level === 'Intermedio' ? '16 horas' : '24 horas',
-      price: level === 'Básico' ? '$450.000 COP' : level === 'Intermedio' ? '$850.000 COP' : '$1.250.000 COP',
       leaderMessage: `Este programa de ${topic} en nivel ${level} ha sido diseñado por nuestros expertos para garantizar una curva de aprendizaje óptima, enfocada en resultados tangibles para su organización.`,
       characteristics: [
         'Metodología de aprendizaje acelerado',
@@ -326,19 +354,46 @@ export const StepInput: React.FC<StepInputProps> = ({
     setFormStep(2);
   };
 
-  const handleAcceptProposal = () => {
-    console.log('handleAcceptProposal called');
-    if (proposalData) {
-      console.log('Accepting proposal with data:', proposalData);
-      onStart({
-        topic: topic.trim(),
-        audience: `Personal nivel ${proposalData.level}`,
-        depth: proposalData.level,
-        targetCompany: 'Empresa Cliente',
-        specialFocus: `Enfoque en ${topic} - Nivel ${proposalData.level}`,
-        preferredDuration: proposalData.hours,
-      });
+  const handleFinalizeProposal = () => {
+    onStart({
+      topic: topic.trim(),
+      audience: audience.trim(),
+      depth,
+      targetCompany: targetCompany.trim(),
+      specialFocus: specialFocus.trim(),
+      preferredDuration: preferredDuration.trim(),
+      desiredOutcome: desiredOutcome.trim(),
+      confirmedThemes: confirmedThemes,
+      customTitle: customTitle.trim() || undefined,
+      proposalFile: proposalFile || undefined
+    });
+  };
+
+  const handleAddTheme = () => {
+    setConfirmedThemes([...confirmedThemes, 'Nuevo Tema']);
+    setEditingThemeIndex(confirmedThemes.length);
+    setNewThemeValue('Nuevo Tema');
+  };
+
+  const handleRemoveTheme = (index: number) => {
+    setConfirmedThemes(confirmedThemes.filter((_, i) => i !== index));
+  };
+
+  const handleUpdateTheme = (index: number, value: string) => {
+    const updated = [...confirmedThemes];
+    updated[index] = value;
+    setConfirmedThemes(updated);
+    setEditingThemeIndex(null);
+  };
+
+  const handleMoveTheme = (index: number, direction: 'up' | 'down') => {
+    const newThemes = [...confirmedThemes];
+    if (direction === 'up' && index > 0) {
+      [newThemes[index], newThemes[index - 1]] = [newThemes[index - 1], newThemes[index]];
+    } else if (direction === 'down' && index < confirmedThemes.length - 1) {
+      [newThemes[index], newThemes[index + 1]] = [newThemes[index + 1], newThemes[index]];
     }
+    setConfirmedThemes(newThemes);
   };
 
   const renderHelpText = (id: string, text: string) => {
@@ -373,6 +428,7 @@ export const StepInput: React.FC<StepInputProps> = ({
       targetCompany: targetCompany.trim() || 'Empresa extraída del documento',
       specialFocus: specialFocus.trim() || 'Foco extraído del documento',
       preferredDuration: preferredDuration.trim() || 'Duración recomendada',
+      desiredOutcome: desiredOutcome.trim() || 'Objetivo extraído del documento',
       customTitle: customTitle.trim() || undefined,
       proposalFile: proposalFile || undefined
     };
@@ -523,31 +579,40 @@ export const StepInput: React.FC<StepInputProps> = ({
         </div>
       )}
 
-      <div className="text-center mb-10">
-        <button 
-          onClick={goToStart}
-          className="hover:opacity-80 transition-opacity cursor-pointer mb-10 active:scale-95"
-          title="Ir al inicio"
-        >
-          <Logo size={150} vertical />
-        </button>
+      <div className="text-center mb-16">
         {formStep === 1 ? (
           <div className="animate-fade-in">
-            <div className="inline-flex items-center gap-2 px-6 py-2 bg-white text-orange-600 rounded-full text-[10px] font-black uppercase tracking-widest mb-10 border border-orange-100 shadow-xl shadow-orange-100/50">
+            <div className="inline-flex items-center gap-2 px-6 py-2 bg-white text-orange-600 rounded-full text-[10px] font-black uppercase tracking-widest mb-12 border border-orange-100 shadow-xl shadow-orange-100/50">
                <ShieldCheck className="w-4 h-4" /> CADEMMY LEARNING SAS • MENTOR VIRTUAL
             </div>
-            <h1 className="text-5xl md:text-7xl font-black text-slate-800 mb-6 leading-none tracking-tight px-4">
-              Catálogo de cursos <span className="text-orange-500 block md:inline">2026</span>
-            </h1>
-            <div className="space-y-4 max-w-3xl mx-auto">
+            
+            <div className="space-y-6 mb-12">
+              <h1 className="text-5xl md:text-7xl font-black text-slate-800 leading-none tracking-tight px-4">
+                Catálogo de cursos <span className="text-orange-500 block md:inline">2026</span>
+              </h1>
               <p className="text-2xl font-black text-slate-800 uppercase tracking-tight">
                 Tu Aliado en Capacitación Cademmy
               </p>
-              <p className="text-lg text-slate-500 font-medium leading-relaxed mb-8">
-                "¡Bienvenido al Catálogo de Cursos Cademmy 2026! Estoy aquí para ayudarte a localizar la formación exacta que tu empresa necesita. Si no encuentras el tema específico en nuestra lista principal, no te preocupes: nuestro buscador especializado lo localizará en nuestro repositorio y te presentará la opción que tenemos del curso al instante.
-                <br /><br />
-                <span className="text-slate-600 font-bold italic">Nota importante:</span> Si deseas realizar ajustes a la propuesta presentada, puedes adelantarlos directamente en el sistema antes de nuestra cita. De esta manera, cuando te reúnas con uno de nuestros asesores ejecutivos, ya tendremos una base sólida sobre tus necesidades específicas para discutirlas a detalle."
+            </div>
+
+            <div className="max-w-3xl mx-auto space-y-8">
+              <p className="text-lg text-slate-500 font-medium leading-relaxed">
+                "¡Bienvenido al Catálogo de Cursos Cademmy 2026! Estoy aquí para ayudarte a localizar la formación exacta que tu empresa necesita. Si no encuentras el tema específico en nuestra lista principal, no te preocupes: nuestro buscador especializado lo localizará en nuestro repositorio y te presentará la opción que tenemos del curso al instante."
               </p>
+
+              <div className="bg-orange-50/50 border border-orange-100 rounded-[2rem] p-8 text-left shadow-sm">
+                <div className="flex items-start gap-4">
+                  <div className="w-10 h-10 bg-orange-100 rounded-xl flex items-center justify-center shrink-0 mt-1">
+                    <Zap className="w-5 h-5 text-orange-600" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-black text-orange-800 uppercase tracking-widest mb-2">Nota importante:</h4>
+                    <p className="text-sm text-orange-900/70 font-medium leading-relaxed italic">
+                      Si deseas realizar ajustes a la propuesta presentada, puedes adelantarlos directamente en el sistema antes de nuestra cita. De esta manera, cuando te reúnas con uno de nuestros asesores ejecutivos, ya tendremos una base sólida sobre tus necesidades específicas para discutirlas a detalle.
+                    </p>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         ) : (
@@ -555,7 +620,8 @@ export const StepInput: React.FC<StepInputProps> = ({
             <h2 className="text-4xl font-black text-slate-800 uppercase tracking-tight">
               Detalles de la <span className="text-orange-500">Capacitación</span>
             </h2>
-            <p className="text-slate-500 font-medium mt-4 text-lg">
+            <div className="h-1 w-20 bg-orange-500 mx-auto mt-6 rounded-full"></div>
+            <p className="text-slate-500 font-medium mt-6 text-lg">
               Nombre del curso: <span className="text-slate-900 font-bold italic">"{topic}"</span>
             </p>
           </div>
@@ -566,7 +632,7 @@ export const StepInput: React.FC<StepInputProps> = ({
         onSubmit={(e) => {
           e.preventDefault();
           if (formStep === 1) {
-            if (topic.trim()) handleGoToSuggestions();
+            if (topic.trim()) handleUnifiedSearch(e);
           } else if (formStep === 2) {
             handleSubmit(e);
           }
@@ -591,36 +657,147 @@ export const StepInput: React.FC<StepInputProps> = ({
                     value={topic}
                     onChange={(e) => setTopic(e.target.value)}
                     placeholder="Ej: Liderazgo Híbrido..."
-                    className="w-full px-8 py-5 rounded-2xl border-2 border-slate-100 bg-slate-50 focus:bg-white focus:border-orange-500 outline-none transition-all font-bold text-slate-700 shadow-sm"
-                />
+                    />
             </div>
             <div className="grid grid-cols-1 gap-4">
               <button
-                type="button"
-                onClick={handleCatalogSearch}
+                type="submit"
                 disabled={!topic.trim() || isSearchingCatalog || isLoadingSuggestions}
-                className="w-full py-7 bg-white border-2 border-slate-200 text-slate-600 hover:bg-slate-50 font-black text-2xl rounded-2xl shadow-xl transition-all flex items-center justify-center gap-4 disabled:opacity-30 disabled:cursor-not-allowed group hover:scale-[1.01]"
+                className="w-full py-8 bg-slate-900 border-2 border-slate-900 text-white hover:bg-black font-black text-2xl rounded-2xl shadow-xl transition-all flex items-center justify-center gap-4 disabled:opacity-30 disabled:cursor-not-allowed group hover:scale-[1.01]"
               >
-                {isSearchingCatalog ? loadingMessage : 'BUSCAR CURSOS EN EL CATÁLOGO'}
+                {(isSearchingCatalog || isLoadingSuggestions) ? loadingMessage : 'BUSCAR CURSO'}
                 <Search className="w-7 h-7 text-orange-500 group-hover:scale-110 transition-transform" />
               </button>
               
               <div className="flex items-center gap-4 py-2">
                 <div className="flex-1 h-px bg-slate-100"></div>
                 <p className="text-[10px] font-black text-slate-300 uppercase tracking-[0.2em] whitespace-nowrap">
-                  Si no encontraste lo que buscabas búscalo en el repositorio
+                  Un solo motor de búsqueda para Catálogo y Repositorio Especializado
                 </p>
                 <div className="flex-1 h-px bg-slate-100"></div>
               </div>
+            </div>
+          </div>
+        ) : formStep === 1.9 ? (
+          <div className="space-y-10 animate-fade-in">
+            <div className="text-center space-y-4">
+              <div className="w-20 h-20 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                <FileText className="w-10 h-10 text-orange-600" />
+              </div>
+              <h2 className="text-3xl font-black text-slate-900 uppercase tracking-tight">Confirma los Temas del Curso</h2>
+              <p className="text-slate-500 font-medium max-w-xl mx-auto">
+                Hemos estructurado esta propuesta inicial de temas basándonos en tus necesidades. Puedes agregar, quitar o modificar cualquier tema antes de generar la propuesta completa.
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              {confirmedThemes.map((theme, index) => (
+                <div 
+                  key={index}
+                  className="flex items-center gap-4 p-5 bg-slate-50 border-2 border-slate-100 rounded-2xl group hover:border-orange-200 hover:bg-white transition-all shadow-sm"
+                >
+                  <div className="w-8 h-8 bg-white border-2 border-slate-200 rounded-full flex items-center justify-center text-xs font-black text-slate-400 shrink-0">
+                    {index + 1}
+                  </div>
+
+                  <div className="flex flex-col gap-0.5 ml-1">
+                    <button
+                      type="button"
+                      disabled={index === 0}
+                      onClick={() => handleMoveTheme(index, 'up')}
+                      className="p-1 text-slate-300 hover:text-orange-500 disabled:opacity-0 transition-all"
+                      title="Subir tema"
+                    >
+                      <ArrowUp className="w-3 h-3" />
+                    </button>
+                    <button
+                      type="button"
+                      disabled={index === confirmedThemes.length - 1}
+                      onClick={() => handleMoveTheme(index, 'down')}
+                      className="p-1 text-slate-300 hover:text-orange-500 disabled:opacity-0 transition-all"
+                      title="Bajar tema"
+                    >
+                      <ArrowDown className="w-3 h-3" />
+                    </button>
+                  </div>
+                  
+                  {editingThemeIndex === index ? (
+                    <div className="flex-1 flex gap-2">
+                       <input
+                        autoFocus
+                        type="text"
+                        value={newThemeValue}
+                        onChange={(e) => setNewThemeValue(e.target.value)}
+                        onBlur={() => handleUpdateTheme(index, newThemeValue)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleUpdateTheme(index, newThemeValue);
+                          if (e.key === 'Escape') setEditingThemeIndex(null);
+                        }}
+                        className="flex-1 px-4 py-2 bg-white border-2 border-orange-500 rounded-xl outline-none font-bold text-slate-700"
+                      />
+                      <button 
+                        onClick={() => handleUpdateTheme(index, newThemeValue)}
+                        className="p-2 bg-orange-500 text-white rounded-xl hover:bg-orange-600"
+                      >
+                        <CheckCircle2 className="w-5 h-5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex-1 flex items-center justify-between">
+                      <span className="font-bold text-slate-700">{theme}</span>
+                      <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingThemeIndex(index);
+                            setNewThemeValue(theme);
+                          }}
+                          className="p-2 text-slate-400 hover:text-orange-500 hover:bg-orange-50 rounded-lg transition-all"
+                          title="Editar tema"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveTheme(index)}
+                          className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                          title="Eliminar tema"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
 
               <button
                 type="button"
-                onClick={handleGoToSuggestions}
-                disabled={!topic.trim() || isLoadingSuggestions}
-                className="w-full py-7 bg-slate-900 hover:bg-black text-white font-black text-2xl rounded-2xl shadow-2xl shadow-slate-200 transition-all flex items-center justify-center gap-4 disabled:opacity-30 disabled:cursor-not-allowed group hover:scale-[1.01]"
+                onClick={handleAddTheme}
+                className="w-full py-4 border-2 border-dashed border-slate-200 rounded-2xl flex items-center justify-center gap-2 text-slate-400 font-bold hover:border-orange-400 hover:text-orange-500 hover:bg-orange-50/50 transition-all group"
               >
-                {isLoadingSuggestions ? loadingMessage : 'BUSCAR CURSOS EN EL REPOSITORIO ESPECIALIZADO'}
-                <Sparkles className="w-7 h-7 text-orange-400 group-hover:rotate-12 transition-transform" />
+                <Plus className="w-5 h-5 group-hover:rotate-90 transition-transform" />
+                Agregar Nuevo Tema
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-6">
+              <button
+                type="button"
+                onClick={() => setFormStep(2)}
+                className="py-6 bg-white border-2 border-slate-200 text-slate-500 font-black text-xl rounded-2xl hover:bg-slate-50 transition-all flex items-center justify-center gap-3"
+              >
+                <ArrowRight className="w-5 h-5 rotate-180" />
+                REGRESAR AL FORMULARIO
+              </button>
+              <button
+                type="button"
+                onClick={handleFinalizeProposal}
+                disabled={confirmedThemes.length === 0}
+                className="py-6 bg-slate-900 border-2 border-slate-900 text-white hover:bg-black font-black text-xl rounded-2xl shadow-xl transition-all flex items-center justify-center gap-3 disabled:opacity-30 group"
+              >
+                CONFIRMAR TEMARIO Y GENERAR ESTRATEGIA
+                <Zap className="w-5 h-5 text-orange-400 group-hover:scale-110 transition-transform" />
               </button>
             </div>
           </div>
@@ -759,7 +936,15 @@ export const StepInput: React.FC<StepInputProps> = ({
                 <p className="text-3xl font-black text-slate-800">{proposalData.hours}</p>
               </div>
 
-              <div className="bg-white p-8 rounded-[2.5rem] border-2 border-orange-100 space-y-6 shadow-xl shadow-orange-100/20">
+              <div className="bg-orange-600 p-8 rounded-[2.5rem] space-y-6 text-white shadow-xl shadow-orange-100/50">
+                <div className="flex items-center gap-3">
+                  <Zap className="w-5 h-5 text-orange-200" />
+                  <span className="text-sm font-black uppercase tracking-widest">Inversión Estimada</span>
+                </div>
+                <p className="text-3xl font-black">{formatCurrency(parseInt(proposalData.hours) * PRICE_PER_HOUR)}</p>
+              </div>
+
+              <div className="bg-white p-8 rounded-[2.5rem] border-2 border-orange-100 space-y-6 shadow-xl shadow-orange-100/20 md:col-span-2">
                 <div className="flex items-center gap-3 text-slate-900">
                   <MessageSquare className="w-5 h-5 text-orange-500" />
                   <span className="text-sm font-black uppercase tracking-widest">Mensaje del Líder Pedagógico</span>
@@ -792,7 +977,7 @@ export const StepInput: React.FC<StepInputProps> = ({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <button
                 type="button"
-                onClick={handleAcceptProposal}
+                onClick={handleFinalizeProposal}
                 className="py-6 bg-orange-500 hover:bg-orange-600 text-white font-black text-xl rounded-2xl transition-all flex items-center justify-center gap-3 shadow-xl shadow-orange-200 px-8"
               >
                 MOSTRAR FORMULARIO PARA PRESENTAR UNA PROPUESTA PRELIMINAR
@@ -936,11 +1121,30 @@ export const StepInput: React.FC<StepInputProps> = ({
                 </div>
             </div>
 
+            <div className="space-y-3">
+                <div className="flex items-center flex-wrap gap-y-1">
+                    <label className="flex items-center gap-2 text-[11px] font-black text-slate-800 uppercase tracking-[0.15em]">
+                        <Target className="w-4 h-4 text-orange-500" /> 5. ¿QUÉ QUIERES LOGRAR CON EL CURSO?
+                    </label>
+                    {mandatoryBadge}
+                    {renderHelpTrigger('outcome')}
+                </div>
+                {renderHelpText('outcome', 'Describe los resultados esperados o el cambio que buscas en los participantes para definir el objetivo central.')}
+                <textarea
+                    required
+                    value={desiredOutcome}
+                    onChange={(e) => setDesiredOutcome(e.target.value)}
+                    placeholder="Ej: Que los gerentes sean capaces de dar feedback constructivo sin generar conflicto y mejoren el clima laboral en un 20%..."
+                    rows={3}
+                    className="w-full px-8 py-5 rounded-2xl border-2 border-slate-100 bg-slate-50 focus:bg-white focus:border-orange-500 outline-none transition-all font-bold text-slate-700 shadow-sm resize-none"
+                />
+            </div>
+
             <div className="space-y-4">
-              <div className="flex items-center flex-wrap gap-y-1">
-                <label className="flex items-center gap-2 text-[11px] font-black text-slate-800 uppercase tracking-[0.15em]">
-                  <Zap className="w-4 h-4 text-orange-500" /> 5. NIVEL DE PROFUNDIDAD
-                </label>
+               <div className="flex items-center flex-wrap gap-y-1">
+                 <label className="flex items-center gap-2 text-[11px] font-black text-slate-800 uppercase tracking-[0.15em]">
+                   <Zap className="w-4 h-4 text-orange-500" /> 6. NIVEL DE PROFUNDIDAD
+                 </label>
                 {mandatoryBadge}
                 {renderHelpTrigger('depth')}
               </div>
@@ -1048,10 +1252,10 @@ export const StepInput: React.FC<StepInputProps> = ({
               )}
               <button
                 type="submit"
-                disabled={isLoading}
+                disabled={isLoading || isGeneratingThemes}
                 className="w-full py-7 bg-slate-900 hover:bg-black text-white font-black text-2xl rounded-2xl shadow-2xl shadow-slate-200 transition-all flex items-center justify-center gap-4 disabled:opacity-30 disabled:cursor-not-allowed group hover:scale-[1.01]"
               >
-                {isLoading ? loadingMessage : 'GENERAR PROPUESTA PRELIMINAR'}
+                {(isLoading || isGeneratingThemes) ? loadingMessage : 'GENERAR PROPUESTA PRELIMINAR'}
                 <Sparkles className="w-7 h-7 text-orange-400 group-hover:rotate-12 transition-transform" />
               </button>
               {!isFormValid && !isLoading && (

@@ -6,13 +6,15 @@ import { StepCourse } from './components/StepCourse';
 import { Loading } from './components/Loading';
 import { Login } from './components/Login';
 import { SavedStrategiesList } from './components/SavedStrategiesList';
+import { UserPersonaReport } from './components/UserPersonaReport';
+import { AdminConsole } from './components/AdminConsole';
 import { AppStep, CourseStrategy, Course, CourseContext, ModuleOutline } from './types';
 import { generateCourseStrategy, generateFullCourseContent, generateModuleIllustration, generateCatalogStrategy } from './services/geminiService';
 import { CatalogCourse } from './src/data/catalog';
-import { auth, googleProvider, signInWithPopup, signOut, db, handleFirestoreError, OperationType } from './firebase';
-import { onAuthStateChanged, User } from 'firebase/auth';
+import { auth, googleProvider, microsoftProvider, signInWithPopup, signOut, db, handleFirestoreError, OperationType, checkIsAdmin } from './firebase';
+import { onAuthStateChanged, User, AuthProvider } from 'firebase/auth';
 import { collection, addDoc, serverTimestamp, doc, updateDoc } from 'firebase/firestore';
-import { LogIn, LogOut, User as UserIcon, Save, CheckCircle, History, Calendar } from 'lucide-react';
+import { LogIn, LogOut, User as UserIcon, Save, CheckCircle, History, Calendar, BarChart3, ShieldCheck } from 'lucide-react';
 import { BOOKING_URL } from './src/constants';
 
 const App: React.FC = () => {
@@ -27,23 +29,88 @@ const App: React.FC = () => {
   const [resetKey, setResetKey] = useState(0);
 
   const [user, setUser] = useState<User | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [showSavedList, setShowSavedList] = useState(false);
+  const [showPersonaReport, setShowPersonaReport] = useState(false);
+  const [showAdminConsole, setShowAdminConsole] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      if (currentUser && currentUser.providerData.some(p => p.providerId === 'password') && !currentUser.emailVerified) {
+        // Force reload to check verification status
+        await currentUser.reload();
+        const updatedUser = auth.currentUser;
+        setUser(updatedUser);
+      } else {
+        setUser(currentUser);
+      }
+      
+      if (currentUser) {
+        const adminStatus = await checkIsAdmin(currentUser.email);
+        setIsAdmin(adminStatus);
+      } else {
+        setIsAdmin(false);
+      }
+      
       setIsAuthReady(true);
     });
     return () => unsubscribe();
   }, []);
 
-  const handleLogin = async () => {
+  const syncWithHubSpot = async (user: User) => {
     try {
-      await signInWithPopup(auth, googleProvider);
+      const [firstName, ...lastNameParts] = (user.displayName || '').split(' ');
+      const lastName = lastNameParts.join(' ');
+      
+      await fetch('/api/crm/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: user.email,
+          firstName: firstName || 'Usuario',
+          lastName: lastName || 'Cademmy',
+          photoUrl: user.photoURL
+        })
+      });
     } catch (error) {
-      console.error('Login error:', error);
+      console.error('HubSpot sync error:', error);
+    }
+  };
+
+  const handleLogin = async (provider: AuthProvider) => {
+    setAuthError(null);
+    console.log('Starting login with provider:', provider.providerId);
+    try {
+      const result = await signInWithPopup(auth, provider);
+      console.log('Login successful:', result.user.email);
+      if (result.user) {
+        await syncWithHubSpot(result.user);
+      }
+    } catch (error: any) {
+      console.error('Detailed login error:', error);
+      let message = 'Error al iniciar sesión.';
+      
+      if (error.code === 'auth/popup-blocked') {
+        message = 'El navegador bloqueó la ventana emergente. Por favor, permite las ventanas emergentes para este sitio.';
+      } else if (error.code === 'auth/operation-not-allowed') {
+        message = 'Este método de inicio de sesión no está habilitado en la consola de Firebase.';
+      } else if (error.code === 'auth/unauthorized-domain') {
+        message = `Este dominio no está autorizado en la consola de Firebase (Authentication > Settings > Authorized domains). Dominio actual: ${window.location.hostname}`;
+      } else if (error.message) {
+        message = `${error.message} (Código: ${error.code})`;
+      }
+      
+      setAuthError(message);
+    }
+  };
+
+  const handleEmailAuth = async (user: User) => {
+    setUser(user);
+    if (user.emailVerified) {
+      await syncWithHubSpot(user);
     }
   };
 
@@ -116,7 +183,8 @@ const App: React.FC = () => {
       depth: 'Intermedio',
       targetCompany: 'Empresa Cliente',
       specialFocus: `Catálogo: ${catalog.id}`,
-      preferredDuration: `${catalog.hours} horas`
+      preferredDuration: `${catalog.hours} horas`,
+      desiredOutcome: catalog.objective // Default outcome from catalog objective
     };
 
     try {
@@ -253,8 +321,8 @@ const App: React.FC = () => {
     );
   }
 
-  if (!user) {
-    return <Login onLogin={handleLogin} />;
+  if (!user || (user.providerData.some(p => p.providerId === 'password') && !user.emailVerified)) {
+    return <Login onLogin={handleLogin} onEmailAuth={handleEmailAuth} externalError={authError} />;
   }
 
   return (
@@ -294,6 +362,23 @@ const App: React.FC = () => {
                     >
                       <History className="w-3.5 h-3.5 text-orange-500" /> Cursos de mi interés
                     </button>
+                    {isAdmin && (
+                      <>
+                        <button
+                          onClick={() => setShowAdminConsole(true)}
+                          className="p-2 bg-white border border-slate-200 text-slate-400 rounded-xl hover:text-orange-500 hover:bg-orange-50 transition-all shadow-sm"
+                          title="Consola de Gestión de Admins"
+                        >
+                          <ShieldCheck className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => setShowPersonaReport(true)}
+                          className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-50 transition-all shadow-sm"
+                        >
+                          <BarChart3 className="w-3.5 h-3.5 text-orange-500" /> Insights Users Report
+                        </button>
+                      </>
+                    )}
                     {strategy && step === AppStep.STRATEGY && (
                       <button
                         onClick={handleSaveStrategy}
@@ -376,12 +461,24 @@ const App: React.FC = () => {
         />
       )}
 
+      {showPersonaReport && (
+        <UserPersonaReport 
+          onClose={() => setShowPersonaReport(false)}
+        />
+      )}
+
+      {showAdminConsole && (
+        <AdminConsole 
+          onClose={() => setShowAdminConsole(false)}
+        />
+      )}
+
       {/* Floating Booking CTA */}
       <a
         href={BOOKING_URL}
         target="_blank"
         rel="noopener noreferrer"
-        className="fixed bottom-8 right-8 z-[60] flex items-center gap-3 px-6 py-4 bg-orange-600 text-white rounded-2xl shadow-2xl hover:bg-orange-700 hover:scale-105 transition-all animate-bounce-subtle no-print group"
+        className="fixed bottom-8 right-8 z-[60] hidden md:flex items-center gap-3 px-6 py-4 bg-orange-600 text-white rounded-2xl shadow-2xl hover:bg-orange-700 hover:scale-105 transition-all animate-bounce-subtle no-print group"
       >
         <div className="bg-white/20 p-2 rounded-lg group-hover:rotate-12 transition-transform">
           <Calendar className="w-5 h-5" />

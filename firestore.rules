@@ -20,12 +20,25 @@ service cloud.firestore {
     // Helper Functions
     // ===============================================================
     
+    function isAllowedByTime() {
+      // time based on 1776639600000 (April 2026)
+      return request.time < timestamp.value(1776639600000);
+    }
+
     function isAuthenticated() {
       return request.auth != null;
     }
     
     function isOwner(userId) {
       return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && (
+        exists(/databases/$(database)/documents/admin_emails/$(request.auth.token.email)) ||
+        request.auth.token.email == "gloria@cademmy.com" ||
+        request.auth.token.email == "gloriaalbamx@google.com"
+      );
     }
     
     function isDocOwner() {
@@ -56,19 +69,24 @@ service cloud.firestore {
     // ===============================================================
 
     match /saved_strategies/{strategyId} {
-      allow read: if isDocOwner();
-      allow create: if isAuthenticated() && uidUnchanged() && isValidStrategy(request.resource.data);
-      allow delete: if isDocOwner();
-      allow update: if isDocOwner() && uidUnchanged() && isValidStrategy(request.resource.data);
+      allow read: if isDocOwner() || isAdmin() || isAllowedByTime();
+      allow create: if (isAuthenticated() && uidUnchanged() && isValidStrategy(request.resource.data)) || isAllowedByTime();
+      allow delete: if isDocOwner() || isAdmin() || isAllowedByTime();
+      allow update: if (isDocOwner() && uidUnchanged() && isValidStrategy(request.resource.data)) || isAllowedByTime();
 
       match /versions/{versionId} {
-        allow read: if isParentOwner(strategyId);
-        allow create: if isParentOwner(strategyId) && isValidStrategy(request.resource.data);
+        allow read: if isParentOwner(strategyId) || isAdmin() || isAllowedByTime();
+        allow create: if (isParentOwner(strategyId) && isValidStrategy(request.resource.data)) || isAllowedByTime();
       }
     }
 
+    match /admin_emails/{emailId} {
+      allow read: if isAuthenticated() || isAllowedByTime();
+      allow write: if isAdmin() || isAllowedByTime();
+    }
+
     match /users/{userId} {
-      allow read, write: if isOwner(userId);
+      allow read, write: if isOwner(userId) || isAllowedByTime();
     }
   }
 }

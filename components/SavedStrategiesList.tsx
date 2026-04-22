@@ -1,9 +1,9 @@
 
 import React, { useEffect, useState } from 'react';
 import { db, auth, handleFirestoreError, OperationType } from '../firebase';
-import { collection, query, where, orderBy, onSnapshot, deleteDoc, doc, getDocs } from 'firebase/firestore';
+import { collection, query, where, orderBy, onSnapshot, deleteDoc, doc, getDocs, limit } from 'firebase/firestore';
 import { CourseStrategy } from '../types';
-import { Trash2, ExternalLink, Clock, BookOpen, ChevronRight, X, History as HistoryIcon, RotateCcw } from 'lucide-react';
+import { Trash2, ExternalLink, Clock, BookOpen, ChevronRight, X, History as HistoryIcon, RotateCcw, Search } from 'lucide-react';
 
 interface SavedStrategyDoc {
   id: string;
@@ -29,33 +29,60 @@ export const SavedStrategiesList: React.FC<SavedStrategiesListProps> = ({ onLoad
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [versions, setVersions] = useState<Record<string, StrategyVersion[]>>({});
   const [loadingVersions, setLoadingVersions] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const user = auth.currentUser;
     if (!user) {
       setLoading(false);
+      setError("No se detectó una sesión activa.");
       return;
     }
 
-    const q = query(
-      collection(db, 'saved_strategies'),
-      where('uid', '==', user.uid),
-      orderBy('createdAt', 'desc')
-    );
+    try {
+      // Limit to 20 most recent to improve performance
+      const q = query(
+        collection(db, 'saved_strategies'),
+        where('uid', '==', user.uid),
+        orderBy('createdAt', 'desc'),
+        limit(20)
+      );
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const docs = snapshot.docs.map(d => ({
-        id: d.id,
-        ...d.data()
-      })) as SavedStrategyDoc[];
-      setStrategies(docs);
-      setLoading(false);
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'saved_strategies');
-      setLoading(false);
-    });
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const docs = snapshot.docs.map(d => ({
+          id: d.id,
+          ...d.data()
+        })) as SavedStrategyDoc[];
+        setStrategies(docs);
+        setLoading(false);
+        setError(null);
+      }, (err) => {
+        console.error("Firestore error in SavedStrategiesList:", err);
+        // If index is missing, we might get an error. Fallback to simpler query.
+        if (err.code === 'failed-precondition') {
+          const fallbackQ = query(
+            collection(db, 'saved_strategies'),
+            where('uid', '==', user.uid),
+            limit(20)
+          );
+          onSnapshot(fallbackQ, (s) => {
+            const d = s.docs.map(doc => ({ id: doc.id, ...doc.data() })) as SavedStrategyDoc[];
+            setStrategies(d);
+            setLoading(false);
+          });
+        } else {
+          setError("Error al cargar tus cursos. Por favor intenta de nuevo.");
+          setLoading(false);
+        }
+      });
 
-    return () => unsubscribe();
+      return () => unsubscribe();
+    } catch (err) {
+      console.error("Setup error in SavedStrategiesList:", err);
+      setError("Error de configuración. Contacta a soporte.");
+      setLoading(false);
+    }
   }, []);
 
   const handleDelete = async (id: string, e: React.MouseEvent) => {
@@ -132,6 +159,25 @@ export const SavedStrategiesList: React.FC<SavedStrategiesListProps> = ({ onLoad
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
+          {error && (
+            <div className="mb-6 p-4 bg-red-50 border border-red-100 text-red-600 rounded-2xl text-center">
+              <p className="text-[10px] font-black uppercase tracking-widest">{error}</p>
+            </div>
+          )}
+
+          {!loading && strategies.length > 0 && (
+            <div className="mb-6 relative">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <input 
+                type="text"
+                placeholder="Buscar por título del curso..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-medium focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none transition-all"
+              />
+            </div>
+          )}
+
           {loading ? (
             <div className="flex flex-col items-center justify-center py-20 space-y-4">
               <div className="w-10 h-10 border-4 border-orange-500 border-t-transparent rounded-full animate-spin" />
@@ -142,128 +188,146 @@ export const SavedStrategiesList: React.FC<SavedStrategiesListProps> = ({ onLoad
               <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 border border-slate-100">
                 <BookOpen className="w-8 h-8 text-slate-300" />
               </div>
-              <p className="text-slate-800 font-black text-lg mb-2">No tienes cursos de tu interés guardados</p>
+              <p className="text-slate-800 font-black text-lg mb-2">Todavía no hay nada guardado</p>
               <p className="text-slate-500 text-sm font-medium">Las arquitecturas que guardes aparecerán aquí para que puedas retomarlas en cualquier momento.</p>
             </div>
           ) : (
             <div className="space-y-4">
-              {strategies.map((item) => (
-                <div 
-                  key={item.id}
-                  className="group bg-white border border-slate-100 rounded-3xl hover:border-orange-200 hover:shadow-md transition-all relative overflow-hidden"
-                >
+              {(() => {
+                const filtered = strategies.filter(s => 
+                  s.strategy.title.toLowerCase().includes(searchTerm.toLowerCase())
+                );
+                
+                if (filtered.length === 0 && searchTerm) {
+                  return (
+                    <div className="text-center py-10">
+                      <p className="text-slate-400 font-bold text-sm">No se encontraron cursos que coincidan con "{searchTerm}"</p>
+                    </div>
+                  );
+                }
+
+                return filtered.map((item) => (
                   <div 
-                    onClick={() => onLoad(item.strategy, item.id)}
-                    className="p-6 cursor-pointer relative"
+                    key={item.id}
+                    className="group bg-white border border-slate-100 rounded-3xl hover:border-orange-200 hover:shadow-md transition-all relative overflow-hidden"
                   >
-                    <div className="absolute top-0 left-0 w-1 h-full bg-slate-100 group-hover:bg-orange-500 transition-colors" />
-                    <div className="flex justify-between items-start gap-4">
-                      <div className="flex-1">
-                        <h3 className="text-lg font-black text-slate-800 group-hover:text-orange-600 transition-colors line-clamp-1">{item.strategy.title}</h3>
-                        <div className="flex flex-wrap gap-3 mt-3">
-                          <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400">
-                            <Clock className="w-3.5 h-3.5" /> {item.strategy.totalDuration}
-                          </div>
-                          <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400">
-                            <BookOpen className="w-3.5 h-3.5" /> {item.strategy.syllabus.length} Módulos
-                          </div>
-                          <div className="text-[10px] font-black text-orange-500 bg-orange-50 px-2 py-0.5 rounded-md border border-orange-100">
-                            NIVEL {item.strategy.depth.toUpperCase()}
-                          </div>
-                          <div className="text-[10px] font-bold text-slate-300 italic">
-                            {formatDate(item.createdAt)}
+                    <div 
+                      onClick={() => onLoad(item.strategy, item.id)}
+                      className="p-6 cursor-pointer relative"
+                    >
+                      <div className="absolute top-0 left-0 w-1 h-full bg-slate-100 group-hover:bg-orange-500 transition-colors" />
+                      <div className="flex justify-between items-start gap-4">
+                        <div className="flex-1">
+                          <h3 className="text-lg font-black text-slate-800 group-hover:text-orange-600 transition-colors line-clamp-1">{item.strategy.title}</h3>
+                          <div className="flex flex-wrap gap-3 mt-3">
+                            <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400">
+                              <Clock className="w-3.5 h-3.5" /> {item.strategy.totalDuration}
+                            </div>
+                            <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400">
+                              <BookOpen className="w-3.5 h-3.5" /> {item.strategy.syllabus.length} Módulos
+                            </div>
+                            <div className="text-[10px] font-black text-orange-500 bg-orange-50 px-2 py-0.5 rounded-md border border-orange-100">
+                              NIVEL {item.strategy.depth.toUpperCase()}
+                            </div>
+                            <div className="text-[10px] font-bold text-slate-300 italic">
+                              {formatDate(item.createdAt)}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <button 
-                          onClick={(e) => toggleVersions(item.id, e)}
-                          className={`p-2 rounded-xl transition-all ${expandedId === item.id ? 'bg-orange-50 text-orange-500' : 'text-slate-300 hover:text-orange-500 hover:bg-orange-50'}`}
-                          title="Ver historial de versiones"
-                        >
-                          <HistoryIcon className="w-4 h-4" />
-                        </button>
-                        {deletingId === item.id ? (
-                          <div className="flex items-center gap-2 animate-scale-in">
-                            <button 
-                              onClick={(e) => confirmDelete(item.id, e)}
-                              className="px-3 py-1.5 bg-red-500 text-white text-[9px] font-black uppercase rounded-lg hover:bg-red-600 transition-colors"
-                            >
-                              Sí
-                            </button>
-                            <button 
-                              onClick={cancelDelete}
-                              className="px-3 py-1.5 bg-slate-100 text-slate-500 text-[9px] font-black uppercase rounded-lg hover:bg-slate-200 transition-colors"
-                            >
-                              No
-                            </button>
-                          </div>
-                        ) : (
-                          <>
-                            <button 
-                              onClick={(e) => handleDelete(item.id, e)}
-                              className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
-                              title="Eliminar"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                            <div className="p-2 text-slate-300 group-hover:text-orange-500 transition-colors">
-                              <ChevronRight className="w-5 h-5" />
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {expandedId === item.id && (
-                    <div className="px-6 pb-6 pt-2 border-t border-slate-50 bg-slate-50/30 animate-fade-in">
-                      <div className="space-y-2">
-                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3">Historial de Versiones</p>
-                        {loadingVersions === item.id ? (
-                          <div className="flex items-center gap-2 py-2">
-                            <div className="w-3 h-3 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
-                            <span className="text-[10px] font-bold text-slate-400">Cargando versiones...</span>
-                          </div>
-                        ) : versions[item.id]?.length === 0 ? (
-                          <p className="text-[10px] font-medium text-slate-400 italic">No hay versiones anteriores.</p>
-                        ) : (
-                          versions[item.id]?.map((v, idx) => (
-                            <div 
-                              key={v.id}
-                              className="flex items-center justify-between p-3 bg-white border border-slate-100 rounded-2xl hover:border-orange-200 transition-all group/version"
-                            >
-                              <div className="flex items-center gap-3">
-                                <div className="w-6 h-6 bg-slate-100 rounded-full flex items-center justify-center text-[9px] font-black text-slate-400">
-                                  {versions[item.id].length - idx}
-                                </div>
-                                <div>
-                                  <p className="text-[11px] font-bold text-slate-700">{formatDate(v.createdAt)}</p>
-                                  <p className="text-[9px] text-slate-400 font-medium">{v.strategy.syllabus.length} Módulos • {v.strategy.totalDuration}</p>
-                                </div>
-                              </div>
+                        <div className="flex items-center gap-1">
+                          <button 
+                            onClick={(e) => toggleVersions(item.id, e)}
+                            className={`p-2 rounded-xl transition-all ${expandedId === item.id ? 'bg-orange-50 text-orange-500' : 'text-slate-300 hover:text-orange-500 hover:bg-orange-50'}`}
+                            title="Ver historial de versiones"
+                          >
+                            <HistoryIcon className="w-4 h-4" />
+                          </button>
+                          {deletingId === item.id ? (
+                            <div className="flex items-center gap-2 animate-scale-in">
                               <button 
-                                onClick={() => onLoad(v.strategy, item.id)}
-                                className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-orange-50 hover:text-orange-600 hover:border-orange-200 transition-all opacity-0 group-hover/version:opacity-100"
+                                onClick={(e) => confirmDelete(item.id, e)}
+                                className="px-3 py-1.5 bg-red-500 text-white text-[9px] font-black uppercase rounded-lg hover:bg-red-600 transition-colors"
                               >
-                                <RotateCcw className="w-3 h-3" /> Revertir
+                                Sí
+                              </button>
+                              <button 
+                                onClick={cancelDelete}
+                                className="px-3 py-1.5 bg-slate-100 text-slate-500 text-[9px] font-black uppercase rounded-lg hover:bg-slate-200 transition-colors"
+                              >
+                                No
                               </button>
                             </div>
-                          ))
-                        )}
+                          ) : (
+                            <>
+                              <button 
+                                onClick={(e) => handleDelete(item.id, e)}
+                                className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
+                                title="Eliminar"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                              <div className="p-2 text-slate-300 group-hover:text-orange-500 transition-colors">
+                                <ChevronRight className="w-5 h-5" />
+                              </div>
+                            </>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  )}
-                </div>
-              ))}
+
+                    {expandedId === item.id && (
+                      <div className="px-6 pb-6 pt-2 border-t border-slate-50 bg-slate-50/30 animate-fade-in">
+                        <div className="space-y-2">
+                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-3">Historial de Versiones</p>
+                          {loadingVersions === item.id ? (
+                            <div className="flex items-center gap-2 py-2">
+                              <div className="w-3 h-3 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
+                              <span className="text-[10px] font-bold text-slate-400">Cargando versiones...</span>
+                            </div>
+                          ) : versions[item.id]?.length === 0 ? (
+                            <p className="text-[10px] font-medium text-slate-400 italic">No hay versiones anteriores.</p>
+                          ) : (
+                            versions[item.id]?.map((v, idx) => (
+                              <div 
+                                key={v.id}
+                                className="flex items-center justify-between p-3 bg-white border border-slate-100 rounded-2xl hover:border-orange-200 transition-all group/version"
+                              >
+                                <div className="flex items-center gap-3">
+                                  <div className="w-6 h-6 bg-slate-100 rounded-full flex items-center justify-center text-[9px] font-black text-slate-400">
+                                    {versions[item.id].length - idx}
+                                  </div>
+                                  <div>
+                                    <p className="text-[11px] font-bold text-slate-700">{formatDate(v.createdAt)}</p>
+                                    <p className="text-[9px] text-slate-400 font-medium">{v.strategy.syllabus.length} Módulos • {v.strategy.totalDuration}</p>
+                                  </div>
+                                </div>
+                                <button 
+                                  onClick={() => onLoad(v.strategy, item.id)}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 text-slate-600 rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-orange-50 hover:text-orange-600 hover:border-orange-200 transition-all opacity-0 group-hover/version:opacity-100"
+                                >
+                                  <RotateCcw className="w-3 h-3" /> Revertir
+                                </button>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ));
+              })()}
             </div>
           )}
         </div>
 
         <div className="p-6 bg-slate-50 border-t border-slate-100 flex flex-col items-center gap-4">
           <button
-            onClick={onClose}
-            className="group flex items-center gap-2 text-xs font-black text-slate-400 hover:text-orange-600 uppercase tracking-widest transition-all"
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              onClose();
+            }}
+            className="group flex items-center gap-2 text-xs font-black text-slate-400 hover:text-orange-600 uppercase tracking-widest transition-all cursor-pointer"
           >
             <RotateCcw className="w-4 h-4 rotate-180 group-hover:-translate-x-1 transition-transform" />
             Regresar al inicio

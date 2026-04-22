@@ -16,18 +16,6 @@ interface StepStrategyProps {
 export const StepStrategy: React.FC<StepStrategyProps> = ({ strategy, onBack, onConfirm, isLoading }) => {
   const [editedStrategy, setEditedStrategy] = useState<CourseStrategy>(strategy);
 
-  const PRICE_PER_HOUR = 1990;
-  const totalHours = editedStrategy.syllabus.reduce((acc, m) => acc + m.hours, 0);
-  const totalInvestment = totalHours * PRICE_PER_HOUR;
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('es-MX', {
-      style: 'currency',
-      currency: 'MXN',
-      minimumFractionDigits: 0
-    }).format(amount);
-  };
-
   const cleanModuleTitle = (title: string) => {
     return title.replace(/^Módulo\s+\d+[:\s-]*/i, '').trim();
   };
@@ -57,6 +45,19 @@ export const StepStrategy: React.FC<StepStrategyProps> = ({ strategy, onBack, on
     if (text.match(/(clasificar|describir|discutir|explicar|identificar|informar|revisar|resumir|parafrasear)/)) return { level: 'Comprender', color: 'bg-emerald-100 text-emerald-700 border-emerald-200' };
     if (text.match(/(definir|enlistar|identificar|nombrar|reconocer|memorizar|relatar)/)) return { level: 'Recordar', color: 'bg-slate-100 text-slate-700 border-slate-200' };
     return null;
+  };
+
+  const PRICE_PER_HOUR = 1990;
+  const totalHours = editedStrategy.syllabus.reduce((acc, m) => acc + m.hours, 0);
+  const totalInvestment = totalHours * PRICE_PER_HOUR;
+
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('es-MX', {
+      style: 'currency',
+      currency: 'MXN',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(amount);
   };
 
   const handleDownloadWord = async () => {
@@ -118,7 +119,6 @@ export const StepStrategy: React.FC<StepStrategyProps> = ({ strategy, onBack, on
                 ${editedStrategy.category ? `<p style="font-size: 8pt; color: #64748b; font-weight: bold; margin-top: 2px;">CATEGORÍA: ${editedStrategy.category.toUpperCase()}</p>` : ''}
                 ${editedStrategy.area ? `<p style="font-size: 8pt; color: #64748b; font-weight: bold; margin-top: 2px;">ÁREA: ${editedStrategy.area.toUpperCase()}</p>` : ''}
                 <p style="font-size: 7pt; color: #94a3b8; margin-top: 2px;">PROPUESTA CLIENTE</p>
-                <p style="font-size: 10pt; color: #f97316; font-weight: 900; margin-top: 5px;">INVERSIÓN: ${formatCurrency(totalInvestment)}</p>
               </td>
             </tr>
           </table>
@@ -126,6 +126,20 @@ export const StepStrategy: React.FC<StepStrategyProps> = ({ strategy, onBack, on
 
         <h1>${title}</h1>
         <p class='subtitle'>Solución de Arquitectura Académica</p>
+
+        <table width='100%' style='margin-bottom: 40px;'>
+          <tr>
+            <td align='center' bgcolor='#0f172a' style='padding: 20px; border-radius: 15px;'>
+              <p style='font-size: 8pt; color: #94a3b8; text-transform: uppercase; margin: 0;'>Duración Total</p>
+              <p style='font-size: 18pt; font-weight: bold; color: #ffffff; margin: 0;'>${editedStrategy.totalDuration}</p>
+            </td>
+            <td width='20'></td>
+            <td align='center' bgcolor='#f97316' style='padding: 20px; border-radius: 15px;'>
+              <p style='font-size: 8pt; color: #ffedd5; text-transform: uppercase; margin: 0;'>Inversión Estimada</p>
+              <p style='font-size: 18pt; font-weight: bold; color: #ffffff; margin: 0;'>${formatCurrency(totalInvestment)}</p>
+            </td>
+          </tr>
+        </table>
 
         <h2>1. Perfil del Participante</h2>
         <div class='content-box'>
@@ -307,6 +321,7 @@ export const StepStrategy: React.FC<StepStrategyProps> = ({ strategy, onBack, on
     const text = `🚀 *PROPUESTA CADEMMY: ${editedStrategy.title.toUpperCase()}*\n\n` +
       `🎯 *Objetivo:* ${editedStrategy.generalObjective}\n\n` +
       `⏳ *Duración:* ${editedStrategy.totalDuration}\n\n` +
+      `💰 *Inversión:* ${formatCurrency(totalInvestment)} MXN\n\n` +
       `📚 *Temario:* \n${syllabusText}\n\n` +
       `📑 _Diseñado por cademmy learning SAS_ \n_www.cademmy.com_`;
     
@@ -429,6 +444,12 @@ export const StepStrategy: React.FC<StepStrategyProps> = ({ strategy, onBack, on
                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Carga Horaria</p>
                   <p className="text-3xl font-black text-white">{editedStrategy.totalDuration}</p>
                   <p className="text-[8px] font-bold text-orange-400/50 uppercase mt-4 tracking-widest">Pedagogía Integral</p>
+              </div>
+              <div className="bg-orange-600 rounded-[2rem] p-8 text-white flex flex-col justify-center items-center text-center shadow-xl">
+                  <Zap className="w-10 h-10 text-white mb-4" />
+                  <p className="text-[10px] font-black text-orange-200 uppercase tracking-widest mb-1">Inversión Estimada</p>
+                  <p className="text-3xl font-black text-white">{formatCurrency(totalInvestment)}</p>
+                  <p className="text-[8px] font-bold text-white/50 uppercase mt-4 tracking-widest">Garantía de Calidad</p>
               </div>
             </div>
         </section>
@@ -729,13 +750,6 @@ export const StepStrategy: React.FC<StepStrategyProps> = ({ strategy, onBack, on
             className="px-12 py-6 bg-white border-2 border-slate-200 text-slate-600 font-black text-xl rounded-3xl shadow-xl hover:bg-slate-50 transition-all flex items-center gap-4 hover:scale-105"
         >
             <ArrowRight className="w-6 h-6 rotate-180 text-orange-500" /> EDITAR FORMULARIO
-        </button>
-        <button 
-            onClick={() => onConfirm(editedStrategy)}
-            disabled={isLoading}
-            className="px-12 py-6 bg-slate-900 text-white font-black text-xl rounded-3xl shadow-xl hover:bg-black transition-all flex items-center gap-4 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-            {isLoading ? 'GENERANDO...' : 'GENERAR CURSO COMPLETO'} <ArrowRight className="w-6 h-6 text-orange-400" />
         </button>
         <a 
             href={BOOKING_URL}
