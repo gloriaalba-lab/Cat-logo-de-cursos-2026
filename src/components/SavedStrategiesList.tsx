@@ -146,15 +146,15 @@ export const SavedStrategiesList: React.FC<SavedStrategiesListProps> = ({ onLoad
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-      <div className="bg-white w-full max-w-2xl rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col max-h-[80vh]">
-        <div className="p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-2 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+      <div className="bg-white w-full max-w-2xl rounded-[2rem] sm:rounded-[2.5rem] shadow-2xl overflow-hidden flex flex-col h-[90vh] sm:h-auto max-h-[90vh] sm:max-h-[80vh]">
+        <div className="p-6 sm:p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
           <div>
-            <h2 className="text-2xl font-black text-slate-800 tracking-tight italic">Cursos de mi <span className="text-orange-500 not-italic">interés</span></h2>
-            <p className="text-slate-500 font-bold text-[10px] uppercase tracking-widest mt-1">Historial de cursos y arquitecturas guardadas</p>
+            <h2 className="text-xl sm:text-2xl font-black text-slate-800 tracking-tight italic">Cursos de mi <span className="text-orange-500 not-italic">interés</span></h2>
+            <p className="text-slate-500 font-bold text-[9px] sm:text-[10px] uppercase tracking-widest mt-1">Historial de arquitecturas guardadas</p>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-white rounded-full transition-colors border border-transparent hover:border-slate-200">
-            <X className="w-6 h-6 text-slate-400" />
+            <X className="w-5 h-5 sm:w-6 h-6 text-slate-400" />
           </button>
         </div>
 
@@ -219,17 +219,17 @@ export const SavedStrategiesList: React.FC<SavedStrategiesListProps> = ({ onLoad
                       <div className="flex justify-between items-start gap-4">
                         <div className="flex-1">
                           <h3 className="text-lg font-black text-slate-800 group-hover:text-orange-600 transition-colors line-clamp-1">{item.strategy.title}</h3>
-                          <div className="flex flex-wrap gap-3 mt-3">
-                            <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400">
+                          <div className="flex flex-wrap gap-2 md:gap-3 mt-3">
+                            <div className="flex items-center gap-1.5 text-[9px] md:text-[10px] font-bold text-slate-400">
                               <Clock className="w-3.5 h-3.5" /> {item.strategy.totalDuration}
                             </div>
-                            <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400">
+                            <div className="flex items-center gap-1.5 text-[9px] md:text-[10px] font-bold text-slate-400">
                               <BookOpen className="w-3.5 h-3.5" /> {item.strategy.syllabus.length} Módulos
                             </div>
-                            <div className="text-[10px] font-black text-orange-500 bg-orange-50 px-2 py-0.5 rounded-md border border-orange-100">
-                              NIVEL {item.strategy.depth.toUpperCase()}
+                            <div className="text-[9px] md:text-[10px] font-black text-orange-500 bg-orange-50 px-2 py-0.5 rounded-md border border-orange-100 uppercase">
+                              NIVEL {item.strategy.depth}
                             </div>
-                            <div className="text-[10px] font-bold text-slate-300 italic">
+                            <div className="text-[9px] md:text-[10px] font-bold text-slate-300 italic whitespace-nowrap">
                               {formatDate(item.createdAt)}
                             </div>
                           </div>

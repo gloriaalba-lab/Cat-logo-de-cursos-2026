@@ -7,15 +7,61 @@ import { Loading } from './components/Loading';
 import { Login } from './components/Login';
 import { SavedStrategiesList } from './components/SavedStrategiesList';
 import { UserPersonaReport } from './components/UserPersonaReport';
-import { AdminConsole } from './components/AdminConsole';
+import { AdminPanel } from './components/AdminPanel';
+import { trackMetric, MetricType } from './services/metricsService';
 import { AppStep, CourseStrategy, Course, CourseContext, ModuleOutline } from './types';
 import { generateCourseStrategy, generateFullCourseContent, generateModuleIllustration, generateCatalogStrategy } from './services/geminiService';
-import { CatalogCourse } from './src/data/catalog';
+import { CatalogCourse } from './data/catalog';
 import { auth, googleProvider, microsoftProvider, signInWithPopup, signOut, db, handleFirestoreError, OperationType, checkIsAdmin } from './firebase';
 import { onAuthStateChanged, User, AuthProvider } from 'firebase/auth';
 import { collection, addDoc, serverTimestamp, doc, updateDoc } from 'firebase/firestore';
-import { LogIn, LogOut, User as UserIcon, Save, CheckCircle, History, Calendar, BarChart3, ShieldCheck } from 'lucide-react';
-import { BOOKING_URL } from './src/constants';
+import { LogIn, LogOut, User as UserIcon, Save, CheckCircle, History, Calendar, BarChart3, ShieldCheck, Shield, HelpCircle } from 'lucide-react';
+import { BOOKING_URL } from './constants';
+
+class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean, error: Error | null }> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+          <div className="bg-white p-12 rounded-[2.5rem] shadow-2xl border border-red-100 max-w-2xl w-full text-center space-y-8">
+            <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto">
+              {/* Manual SVG for Lucide X to avoid dependency in ErrorBoundary */}
+              <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-red-600"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+            </div>
+            <div className="space-y-4">
+              <h2 className="text-3xl font-black text-slate-800 tracking-tight">Vaya, algo no salió como esperábamos</h2>
+              <p className="text-slate-500 font-medium leading-relaxed">
+                El motor de arquitectura ha encontrado un error inesperado al procesar la vista. 
+                Por favor, intenta recargar la aplicación o regresar al inicio.
+              </p>
+              {this.state.error && (
+                <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 text-[10px] font-mono text-slate-400 overflow-auto max-h-40 text-left whitespace-pre-wrap">
+                  {this.state.error.message}
+                </div>
+              )}
+            </div>
+            <button 
+              onClick={() => window.location.reload()}
+              className="w-full py-4 bg-slate-900 text-white font-black rounded-2xl hover:bg-black transition-all shadow-xl"
+            >
+              RECARGAR APLICACIÓN
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 const App: React.FC = () => {
   const [step, setStep] = useState<AppStep>(AppStep.INPUT);
@@ -29,54 +75,94 @@ const App: React.FC = () => {
   const [resetKey, setResetKey] = useState(0);
 
   const [user, setUser] = useState<User | null>(null);
+  const [onboardingData, setOnboardingData] = useState<any>(null);
+  const [isOnboarding, setIsOnboarding] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [showSavedList, setShowSavedList] = useState(false);
   const [showPersonaReport, setShowPersonaReport] = useState(false);
-  const [showAdminConsole, setShowAdminConsole] = useState(false);
+  const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
 
   useEffect(() => {
+    // Register global bridge for AdminPanel 'Edit in App' feature
+    (window as any).loadStrategyInApp = (loadedStrategy: CourseStrategy) => {
+      setStrategy(loadedStrategy);
+      setStep(AppStep.STRATEGY);
+      setSavedId(null); // It's a copy for editing, but they can save it later
+      trackMetric(MetricType.CATALOG_VIEWED, { title: loadedStrategy.title, source: 'admin_panel' });
+    };
+
+    return () => {
+      delete (window as any).loadStrategyInApp;
+    };
+  }, []);
+
+  useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      if (currentUser && currentUser.providerData.some(p => p.providerId === 'password') && !currentUser.emailVerified) {
-        // Force reload to check verification status
-        await currentUser.reload();
-        const updatedUser = auth.currentUser;
-        setUser(updatedUser);
-      } else {
-        setUser(currentUser);
+      try {
+        if (currentUser && currentUser.providerData.some(p => p.providerId === 'password') && !currentUser.emailVerified) {
+          // Force reload to check verification status
+          await currentUser.reload().catch(e => console.warn("User reload failed", e));
+          const updatedUser = auth.currentUser;
+          setUser(updatedUser);
+        } else {
+          setUser(currentUser);
+        }
+        
+        if (currentUser) {
+          const adminStatus = await checkIsAdmin(currentUser.email);
+          setIsAdmin(adminStatus);
+          trackMetric(MetricType.USER_SIGNIN);
+          
+          if (!isOnboarding) {
+            setStep(AppStep.INPUT);
+            setStrategy(null);
+            setCourse(null);
+          }
+        } else {
+          setIsAdmin(false);
+        }
+      } catch (error) {
+        console.error("Auth state observer error:", error);
+      } finally {
+        setIsAuthReady(true);
       }
-      
-      if (currentUser) {
-        const adminStatus = await checkIsAdmin(currentUser.email);
-        setIsAdmin(adminStatus);
-      } else {
-        setIsAdmin(false);
-      }
-      
-      setIsAuthReady(true);
     });
     return () => unsubscribe();
   }, []);
 
-  const syncWithHubSpot = async (user: User) => {
+  const syncWithHubSpot = async (userWithContext: any) => {
     try {
-      const [firstName, ...lastNameParts] = (user.displayName || '').split(' ');
+      const [firstName, ...lastNameParts] = (userWithContext.displayName || '').split(' ');
       const lastName = lastNameParts.join(' ');
+      
+      // Calculate strategic tags for CRM
+      const tags = ['strategic_diagnostic_2026'];
+      if (userWithContext.organizationData) {
+        if (userWithContext.organizationData.sector) tags.push(`sector_${userWithContext.organizationData.sector.toLowerCase().replace(/\s+/g, '_')}`);
+        if (userWithContext.organizationData.size) tags.push(`size_${userWithContext.organizationData.size}`);
+      }
       
       await fetch('/api/crm/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          email: user.email,
+          email: userWithContext.email,
           firstName: firstName || 'Usuario',
           lastName: lastName || 'Cademmy',
-          photoUrl: user.photoURL
+          photoUrl: userWithContext.photoURL,
+          company: userWithContext.organizationData?.company,
+          sector: userWithContext.organizationData?.sector,
+          role: userWithContext.organizationData?.role,
+          size: userWithContext.organizationData?.size,
+          tags: tags,
+          intent: 'b2b_training_diagnostic'
         })
       });
     } catch (error) {
-      console.error('HubSpot sync error:', error);
+      console.error('CRM sync error:', error);
     }
   };
 
@@ -97,8 +183,13 @@ const App: React.FC = () => {
         message = 'El navegador bloqueó la ventana emergente. Por favor, permite las ventanas emergentes para este sitio.';
       } else if (error.code === 'auth/operation-not-allowed') {
         message = 'Este método de inicio de sesión no está habilitado en la consola de Firebase.';
-      } else if (error.code === 'auth/unauthorized-domain') {
-        message = `Este dominio no está autorizado en la consola de Firebase (Authentication > Settings > Authorized domains). Dominio actual: ${window.location.hostname}`;
+      } else if (error.code === 'auth/unauthorized-domain' || (error.message && error.message.includes('400')) || (error.code === 'auth/internal-error' && error.message.includes('popup'))) {
+        const domain = window.location.hostname;
+        const origin = window.location.origin;
+        message = `Error 400: Dominio no reconocido.
+        Para solucionar esto, por favor copia estos datos y pégalos en tu Consola:
+        1. En Firebase (Auth > Settings): añade "${domain}" a Dominios Autorizados.
+        2. En Google Cloud (Credentials > OAuth 2.0): añade "${origin}" a Orígenes de JavaScript autorizados.`;
       } else if (error.message) {
         message = `${error.message} (Código: ${error.code})`;
       }
@@ -107,16 +198,26 @@ const App: React.FC = () => {
     }
   };
 
-  const handleEmailAuth = async (user: User) => {
-    setUser(user);
-    if (user.emailVerified) {
-      await syncWithHubSpot(user);
+  const handleEmailAuth = async (userWithData: any) => {
+    setUser(userWithData);
+    if (userWithData.organizationData) {
+      setOnboardingData(userWithData.organizationData);
+      // Here we would also sync to HubSpot with organization data
+      await syncWithHubSpot(userWithData);
     }
+    setIsOnboarding(false);
+    setStep(AppStep.INPUT);
   };
 
   const handleLogout = async () => {
     try {
       await signOut(auth);
+      // Clear all state on logout
+      setContext(null);
+      setStrategy(null);
+      setCourse(null);
+      setSavedId(null);
+      setResetKey(prev => prev + 1);
     } catch (error) {
       console.error('Logout error:', error);
     }
@@ -128,6 +229,9 @@ const App: React.FC = () => {
     try {
       const strategyData = {
         uid: user.uid,
+        userName: user.displayName || 'Usuario',
+        userEmail: user.email,
+        userPhoto: user.photoURL,
         strategy: strategy,
         updatedAt: serverTimestamp()
       };
@@ -136,6 +240,7 @@ const App: React.FC = () => {
         // Update existing strategy and add a version
         const strategyRef = doc(db, 'saved_strategies', savedId);
         await updateDoc(strategyRef, strategyData);
+        trackMetric(MetricType.STRATEGY_SAVED, { strategyId: savedId, action: 'update' });
         
         // Add to versions subcollection
         await addDoc(collection(strategyRef, 'versions'), {
@@ -149,6 +254,7 @@ const App: React.FC = () => {
           createdAt: serverTimestamp()
         });
         setSavedId(docRef.id);
+        trackMetric(MetricType.STRATEGY_SAVED, { strategyId: docRef.id, action: 'create' });
         
         // Add initial version
         await addDoc(collection(docRef, 'versions'), {
@@ -173,21 +279,27 @@ const App: React.FC = () => {
     setContext(null); 
   };
 
-  const handleSelectCatalogCourse = async (catalog: CatalogCourse) => {
+  const handleSelectCatalogCourse = async (catalog: CatalogCourse & { rephrasedTitle?: string; executiveSummary?: string }) => {
     setLoading(true);
-    setLoadingMessage(`Consultando catálogo y estructurando propuesta`);
+    setLoadingMessage(`Analizando brechas y arquitectando respuesta estratégica`);
     
     const newContext: CourseContext = {
-      topic: catalog.title,
+      topic: catalog.rephrasedTitle || catalog.title,
       audience: catalog.targetAudience,
       depth: 'Intermedio',
       targetCompany: 'Empresa Cliente',
-      specialFocus: `Catálogo: ${catalog.id}`,
+      industry: catalog.area || 'Industria General',
+      specialFocus: `Arquitectura de solución: ${catalog.id}`,
       preferredDuration: `${catalog.hours} horas`,
-      desiredOutcome: catalog.objective // Default outcome from catalog objective
+      desiredOutcome: catalog.executiveSummary || catalog.objective 
     };
 
     try {
+      trackMetric(MetricType.CATALOG_VIEWED, { 
+        title: catalog.title,
+        industry: catalog.area,
+        category: catalog.category
+      });
       const catalogStrategy = await generateCatalogStrategy(catalog, newContext);
       setStrategy(catalogStrategy);
       setContext(newContext);
@@ -260,6 +372,13 @@ const App: React.FC = () => {
     try {
       console.log('Generating course strategy...');
       const data = await generateCourseStrategy(newContext);
+      trackMetric(MetricType.STRATEGY_GENERATED, { 
+        topic: newContext.topic,
+        industry: newContext.industry,
+        depth: newContext.depth,
+        outcome: newContext.desiredOutcome,
+        audience: newContext.audience
+      });
       console.log('Strategy generated successfully:', data);
       const strategyWithVersion = { ...data, version: '1.0' };
       setStrategy(strategyWithVersion);
@@ -304,8 +423,17 @@ const App: React.FC = () => {
     }
   };
 
+  const handleGoHome = () => {
+    setStep(AppStep.INPUT);
+    setStrategy(null);
+    setCourse(null);
+    setSavedId(null);
+    setContext(null);
+    setLoading(false);
+    trackMetric(MetricType.NAVIGATION, { target: 'home' });
+  };
+
   const handleBackToInput = () => { 
-    console.log('Returning to home...');
     setStep(AppStep.INPUT); 
     setStrategy(null); 
     setCourse(null);
@@ -321,25 +449,33 @@ const App: React.FC = () => {
     );
   }
 
-  if (!user || (user.providerData.some(p => p.providerId === 'password') && !user.emailVerified)) {
-    return <Login onLogin={handleLogin} onEmailAuth={handleEmailAuth} externalError={authError} />;
+  if (!user || isOnboarding || (user.providerData.some(p => p.providerId === 'password') && !user.emailVerified)) {
+    return <Login 
+      user={user}
+      onLogin={(p) => { setIsOnboarding(true); handleLogin(p); }} 
+      onEmailAuth={handleEmailAuth} 
+      externalError={authError} 
+    />;
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-orange-100">
+    <ErrorBoundary>
+      <div className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-orange-100">
       <header className="bg-white border-b border-slate-200 sticky top-0 z-50 no-print">
-        <div className="max-w-7xl mx-auto px-4 h-20 flex items-center justify-between">
+        <div className="max-w-7xl mx-auto px-4 py-4 lg:min-h-[6rem] flex flex-col items-center justify-center lg:flex-row lg:justify-between gap-4">
           <button 
-            onClick={handleBackToInput}
-            className="hover:opacity-80 active:scale-95 transition-all cursor-pointer"
+            onClick={handleGoHome}
+            className="hover:opacity-80 active:scale-95 transition-all cursor-pointer shrink-0"
+            id="header-logo-button"
             title="Ir al inicio"
           >
-            <Logo />
+            <Logo size={window.innerWidth < 768 ? 40 : 45} />
           </button>
-          <div className="flex items-center gap-4">
+          
+            <div className="flex flex-wrap items-center justify-center lg:justify-end gap-2 md:gap-3 w-full lg:w-auto">
             {strategy?.version && (
-              <span className="hidden md:inline-block text-[10px] font-black text-orange-500 bg-orange-50 px-3 py-1 rounded-full border border-orange-100">
-                VERSIÓN {strategy.version}
+              <span className="hidden xs:inline-block text-[9px] font-black text-orange-500 bg-orange-50 px-2 py-0.5 rounded-full border border-orange-100">
+                V{strategy.version}
               </span>
             )}
 
@@ -347,75 +483,83 @@ const App: React.FC = () => {
               href={BOOKING_URL}
               target="_blank"
               rel="noopener noreferrer"
-              className="hidden sm:flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-orange-700 transition-all shadow-lg shadow-orange-100"
+              onClick={() => trackMetric(MetricType.BOOKING_CLICKED, { location: 'header' })}
+              className="flex items-center gap-2 px-3 md:px-4 py-2 bg-orange-600 text-white rounded-xl text-[9px] md:text-[10px] font-black uppercase tracking-widest hover:bg-orange-700 transition-all shadow-lg shadow-orange-100 whitespace-nowrap"
             >
-              <Calendar className="w-3.5 h-3.5" /> Agendar una cita
+              <Calendar className="w-3.5 h-3.5" /> <span className="hidden xs:inline">Hablar con un consultor estratégico</span><span className="xs:hidden">Motor Estratégico</span>
             </a>
 
             {isAuthReady && (
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
                 {user ? (
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
                     <button
+                      id="mis-diagnosticos-button"
                       onClick={() => setShowSavedList(true)}
-                      className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-50 transition-all shadow-sm"
+                      className="flex items-center gap-2 px-3 md:px-4 py-2 bg-white border border-slate-200 text-slate-600 rounded-xl text-[9px] md:text-[10px] font-black uppercase tracking-widest hover:bg-slate-50 transition-all shadow-sm whitespace-nowrap"
                     >
-                      <History className="w-3.5 h-3.5 text-orange-500" /> Cursos de mi interés
+                      <History className="w-3.5 h-3.5 text-orange-500" /> <span className="hidden sm:inline">Mis Diagnósticos</span><span className="sm:hidden">Diagnósticos</span>
                     </button>
-                    {isAdmin && (
-                      <>
-                        <button
-                          onClick={() => setShowAdminConsole(true)}
-                          className="p-2 bg-white border border-slate-200 text-slate-400 rounded-xl hover:text-orange-500 hover:bg-orange-50 transition-all shadow-sm"
-                          title="Consola de Gestión de Admins"
-                        >
-                          <ShieldCheck className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => setShowPersonaReport(true)}
-                          className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-50 transition-all shadow-sm"
-                        >
-                          <BarChart3 className="w-3.5 h-3.5 text-orange-500" /> Insights Users Report
-                        </button>
-                      </>
-                    )}
                     {strategy && step === AppStep.STRATEGY && (
                       <button
+                        id="guardar-resultado-button"
                         onClick={handleSaveStrategy}
                         disabled={saveStatus === 'saving'}
-                        className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border ${
+                        className={`flex items-center gap-2 px-3 md:px-4 py-2 rounded-xl text-[9px] md:text-[10px] font-black uppercase tracking-widest transition-all border whitespace-nowrap ${
                           saveStatus === 'saved' 
                             ? 'bg-emerald-50 text-emerald-600 border-emerald-100' 
                             : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
                         }`}
                       >
                         {saveStatus === 'saving' ? (
-                          'Guardando...'
+                          '...'
                         ) : saveStatus === 'saved' ? (
-                          <><CheckCircle className="w-3.5 h-3.5" /> Guardado</>
+                          <><CheckCircle className="w-3.5 h-3.5" /> <span className="hidden xs:inline">Guardado</span></>
                         ) : (
-                          <><Save className="w-3.5 h-3.5 text-orange-500" /> Guardar Resultado</>
+                          <><Save className="w-3.5 h-3.5 text-orange-500" /> <span className="hidden xs:inline">Guardar Resultado</span><span className="xs:hidden">Guardar</span></>
                         )}
                       </button>
                     )}
-                    <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-slate-50 rounded-xl border border-slate-100">
+
+                    <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-slate-50 rounded-xl border border-slate-100 whitespace-nowrap">
                       {user.photoURL ? (
                         <img src={user.photoURL} alt={user.displayName || ''} className="w-5 h-5 rounded-full" referrerPolicy="no-referrer" />
                       ) : (
                         <UserIcon className="w-4 h-4 text-slate-400" />
                       )}
-                      <span className="text-[10px] font-black text-slate-600 truncate max-w-[100px]">{user.displayName}</span>
+                      <span className="text-[10px] font-black text-slate-600 truncate max-w-[80px]">{user.displayName?.split(' ')[0]}</span>
                     </div>
-                    <button onClick={handleLogout} className="p-2 text-slate-400 hover:text-red-500 transition-colors" title="Cerrar Sesión">
+
+                    <button id="logout-button" onClick={handleLogout} className="p-2 text-slate-400 hover:text-red-500 transition-colors" title="Cerrar Sesión">
                       <LogOut className="w-5 h-5" />
                     </button>
+
+                    {isAdmin && (
+                      <div className="flex items-center gap-1 md:gap-2 ml-1 md:ml-2 border-l border-slate-100 pl-2 md:pl-4">
+                        <button
+                          id="admin-panel-button"
+                          onClick={() => setShowAdminPanel(true)}
+                          className="flex items-center gap-2 px-3 md:px-4 py-2 bg-slate-900 border border-slate-800 text-white rounded-xl text-[9px] md:text-[10px] font-black uppercase tracking-widest hover:bg-black transition-all shadow-lg whitespace-nowrap"
+                        >
+                          <Shield className="w-3.5 h-3.5 text-orange-500" /> <span className="hidden sm:inline">Admin</span>
+                        </button>
+                        <button
+                          id="insights-report-button"
+                          onClick={() => setShowPersonaReport(true)}
+                          className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 text-slate-600 rounded-xl text-[9px] md:text-[10px] font-black uppercase tracking-widest hover:bg-slate-50 transition-all shadow-sm"
+                          title="Insights Report"
+                        >
+                          <BarChart3 className="w-3.5 h-3.5 text-orange-500" />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ) : null}
               </div>
             )}
 
-            <span className="hidden lg:inline-block text-[10px] font-black text-slate-300 uppercase tracking-widest bg-slate-50 px-6 py-2.5 rounded-full border border-slate-100 shadow-sm">
-              Catálogo de cursos 2026
+            <span className="hidden lg:inline-block text-[10px] font-black text-slate-300 uppercase tracking-widest bg-slate-50 px-6 py-2.5 rounded-full border border-slate-100 shadow-sm whitespace-nowrap">
+              Arquitectura de Soluciones • Motor Estratégico
             </span>
           </div>
         </div>
@@ -428,6 +572,7 @@ const App: React.FC = () => {
           <>
             {step === AppStep.INPUT && (
               <StepInput 
+                key={resetKey}
                 onStart={handleStartConsultancy} 
                 onSelectCatalogCourse={handleSelectCatalogCourse}
                 onImport={() => {}} 
@@ -439,6 +584,7 @@ const App: React.FC = () => {
               <StepStrategy 
                 strategy={strategy} 
                 onBack={handleBackToInput}
+                onHome={handleGoHome}
                 onConfirm={handleConfirmStrategy}
                 isLoading={loading}
               />
@@ -448,6 +594,7 @@ const App: React.FC = () => {
                 course={course} 
                 onBackToVariations={() => setStep(AppStep.STRATEGY)} 
                 onRestart={handleBackToInput} 
+                onHome={handleGoHome}
               />
             )}
           </>
@@ -467,9 +614,9 @@ const App: React.FC = () => {
         />
       )}
 
-      {showAdminConsole && (
-        <AdminConsole 
-          onClose={() => setShowAdminConsole(false)}
+      {showAdminPanel && (
+        <AdminPanel 
+          onClose={() => setShowAdminPanel(false)}
         />
       )}
 
@@ -478,17 +625,19 @@ const App: React.FC = () => {
         href={BOOKING_URL}
         target="_blank"
         rel="noopener noreferrer"
+        onClick={() => trackMetric(MetricType.BOOKING_CLICKED, { location: 'floating_cta' })}
         className="fixed bottom-8 right-8 z-[60] hidden md:flex items-center gap-3 px-6 py-4 bg-orange-600 text-white rounded-2xl shadow-2xl hover:bg-orange-700 hover:scale-105 transition-all animate-bounce-subtle no-print group"
       >
         <div className="bg-white/20 p-2 rounded-lg group-hover:rotate-12 transition-transform">
           <Calendar className="w-5 h-5" />
         </div>
         <div className="flex flex-col items-start">
-          <span className="text-[10px] font-black uppercase tracking-widest leading-none mb-1">¿Necesitas ayuda?</span>
-          <span className="text-sm font-black leading-none">Agendar una cita</span>
+          <span className="text-[10px] font-black uppercase tracking-widest leading-none mb-1 text-orange-200">¿Prefieres una recomendación ejecutiva directa?</span>
+          <span className="text-sm font-black leading-none">Hablar con un consultor estratégico</span>
         </div>
       </a>
     </div>
+    </ErrorBoundary>
   );
 };
 

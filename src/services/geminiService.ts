@@ -1,7 +1,7 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
 import { CourseStrategy, Course, CourseModule, CourseContext } from "../types";
-import { CatalogCourse } from "../src/data/catalog";
+import { CatalogCourse } from "../data/catalog";
 
 const SYSTEM_INSTRUCTION = `
 ROL:
@@ -42,6 +42,8 @@ REGLAS DE DISEÑO Y CONSULTORÍA:
      * Ejemplo Incorrecto: ["Al finalizar el curso el participante identificará...", "El asistente aplicará..."]
 2. ANÁLISIS: Analiza el sector y sugiere un enfoque basado en competencias laborales o normativa mexicana (NOMs, CONOCER) si aplica.
 3. PERSONALIDAD: Profesional, Ejecutivo, Consultivo y Resolutivo. Usas terminología de negocios (ROI, KPIs, Competencias, Normativa).
+   - EVITA frases académicas o de LMS tradicional como "Este curso ofrece herramientas para...", "El alumno aprenderá a...".
+   - PREFIERE frases ejecutivas orientadas al impacto: "Fortalece la capacidad de...", "Habilita la optimización de...", "Asegura la alineación estratégica en...".
 4. LÓGICA DE NIVELES Y PROFUNDIDAD (CRÍTICO):
    - BÁSICO (Niveles Bloom 1-2): Fundamentos, conceptos iniciales, terminología, procesos estándar y "el qué" de las cosas.
    - INTERMEDIO (Niveles Bloom 3-4): Aplicación práctica, análisis de casos, optimización, resolución de problemas comunes y "el cómo" operativo.
@@ -54,7 +56,10 @@ REGLAS DE DISEÑO Y CONSULTORÍA:
 5. METODOLOGÍA: Se refiere estrictamente a las TÉCNICAS DE ENSEÑANZA APLICADA. 
    - Debes incluir y describir cómo se aplicarán las técnicas: Expositiva (para teoría), Diálogo-Discusión (para análisis) y Demostrativa/Ejecución (para práctica).
    - Menciona el uso de casos de estudio, dinámicas grupales y herramientas tecnológicas específicas.
-6. CONTEXTUALIZACIÓN: Adapta TODO a la INDUSTRIA y FOCO ESPECIAL proporcionado por el usuario.
+6. CONTEXTUALIZACIÓN Y SEGMENTACIÓN (CRÍTICO): 
+   - Adapta TODO el contenido (ejemplos, casos, objetivos) a la INDUSTRIA, TAMAÑO DE EMPRESA y ROL DEL USUARIO.
+   - Si la industria es "Salud", usa terminología médica; si es "Fintech", habla de ratios y cumplimiento; si es "Manufactura", habla de eficiencias y seguridad industrial.
+   - La propuesta debe sentirse como si hubiera sido escrita por un experto de esa industria específica.
 7. ACTIVIDADES: Deben ser de alta dificultad (Pensamiento Crítico), incluyendo Quizzes de 5-10 preguntas y 3 Casos de Razonamiento por módulo.
 8. IDIOMA: Español de México/Latinoamérica profesional y corporativo.
 `;
@@ -468,10 +473,20 @@ export const generateTitleSuggestions = async (originalTitle: string): Promise<s
   }
   const ai = new GoogleGenAI({ apiKey: apiKey });
   
-  const prompt = `El usuario ha solicitado un curso titulado: "${originalTitle}".
-  Genera exactamente 3 opciones de títulos similares, más profesionales o con enfoques ligeramente distintos que podrían interesarle a una empresa B2B.
-  Responde únicamente con un arreglo JSON de strings.
-  Ejemplo: ["Título 1", "Título 2", "Título 3"]`;
+  const prompt = `El usuario ha solicitado un diagnóstico de capacitación para la necesidad: "${originalTitle}".
+  Genera exactamente 3 opciones de títulos que representen una "Línea de Solución" estratégica.
+  
+  REGLAS DE ESTILO B2B CONSULTIVO:
+  1. Usa lenguaje ejecutivo y orientado a resultados de negocio.
+  2. Enfócate en conceptos que RH valora: "Optimización", "Alto Rendimiento", "Competencias Directivas", "Productividad", "Equipos Clave".
+  3. No uses títulos académicos simples; usa títulos que prometan impacto.
+  4. Los títulos deben ser cortos pero poderosos.
+  
+  Ejemplos de transformación:
+  - De "Liderazgo" a "Optimización del liderazgo y desempeño en mandos medios"
+  - De "Gerencia" a "Estrategias de alto rendimiento para la gerencia intermedia"
+  
+  Responde únicamente con un arreglo JSON de strings.`;
 
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',
@@ -496,7 +511,18 @@ export const generateTitleSuggestions = async (originalTitle: string): Promise<s
   }
 };
 
-export const searchCatalogWithAI = async (topic: string, catalog: any[]): Promise<{ id: string; reasoning: string }[]> => {
+export const searchCatalogWithAI = async (
+  topic: string, 
+  catalog: any[], 
+  context: { industry: string; company: string; role: string; problem: string }
+): Promise<{ 
+  id: string; 
+  reasoning: string; 
+  rephrasedTitle: string; 
+  businessImpact: string[]; 
+  alignmentScore: number;
+  executiveSummary: string;
+}[]> => {
   const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
   const ai = new GoogleGenAI({ apiKey: apiKey || "" });
   
@@ -508,17 +534,27 @@ export const searchCatalogWithAI = async (topic: string, catalog: any[]): Promis
     content: c.content
   }));
 
-  const prompt = `Analiza el catálogo de cursos de Cademmy y determina cuáles se relacionan de forma DIRECTA y RELEVANTE con la búsqueda del usuario: "${topic}".
+  const prompt = `Realiza un DIAGNÓSTICO ESTRATÉGICO e INTERVENCIÓN ORGANIZATIONAL basándote en la base de conocimientos de Cademmy para la necesidad crítica del cliente.
   
-  CATÁLOGO:
+  CONTEXTO CORPORATIVO:
+  - Organización: "${context.company}"
+  - Vertical de Industria: "${context.industry}"
+  - Nivel Ejecutivo: "${context.role}"
+  - Dolor de Negocio (Business Pain): "${context.problem}"
+  
+  SOLUCIONES BASE DISPONIBLES:
   ${JSON.stringify(catalogSummary, null, 2)}
   
-  REGLAS:
-  1. Sé estricto con la relevancia. Si el curso no aborda el tema principal solicitado, no lo incluyas.
-  2. No incluyas cursos "complementarios" si no tienen una relación directa con el tema central.
-  3. Para cada curso seleccionado, proporciona un breve "razonamiento" (máximo 15 palabras) de por qué es relevante.
-  4. Responde únicamente con un arreglo JSON de objetos con 'id' y 'reasoning'.
-  5. Si no hay ninguno directamente relacionado, devuelve un arreglo vacío [].`;
+  REGLAS DE ARQUITECTURA CONSULTIVA (NIVEL SENIOR PARTNER):
+  1. REFRASÉO ESTRATÉGICO: El "rephrasedTitle" DEBE transformar el nombre base en una SOLUCIÓN DE NEGOCIO. Usa terminología de la vertical ${context.industry}.
+     - Ejemplo: En lugar de "Ventas", usa "Optimización del Ciclo de Ingresos y Cierre de Cuentas Estratégicas".
+  2. IMPACTO DE NEGOCIO REAL: Genera 3 bullets de "businessImpact". Debe hablar de KPIs, ROI y mitigación de riesgos específicos para la industria "${context.industry}". EVITA lo académico ("aprenderán a...").
+  3. ALINEACIÓN ESTRATÉGICA: Justifica cómo esta arquitectura resuelve directamente el "${context.problem}" del "${context.role}". El "alignmentScore" (0-100) debe ser riguroso.
+  4. TONO EJECUTIVO (VOICE OF BUSINESS): El "executiveSummary" debe sonar como una recomendación de una consultora Big Four (McKinsey/Deloitte). Cero terminología de LMS tradicional.
+  5. RAZONAMIENTO: Justifica técnicamente por qué esta intervención es la pieza clave para resolver "${context.problem}".
+  
+  Responde únicamente con un arreglo JSON de objetos con: id, reasoning, rephrasedTitle, businessImpact (array), alignmentScore (number), executiveSummary.
+  Máximo 5 resultados. Si no hay alineación estratégica clara, devuelve [].`;
 
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',
@@ -531,12 +567,16 @@ export const searchCatalogWithAI = async (topic: string, catalog: any[]): Promis
           type: Type.OBJECT,
           properties: {
             id: { type: Type.STRING },
-            reasoning: { type: Type.STRING }
+            reasoning: { type: Type.STRING },
+            rephrasedTitle: { type: Type.STRING },
+            businessImpact: { type: Type.ARRAY, items: { type: Type.STRING } },
+            alignmentScore: { type: Type.NUMBER },
+            executiveSummary: { type: Type.STRING }
           },
-          required: ["id", "reasoning"]
+          required: ["id", "reasoning", "rephrasedTitle", "businessImpact", "alignmentScore", "executiveSummary"]
         }
       },
-      temperature: 0.2
+      temperature: 0.3
     }
   });
 
@@ -544,7 +584,7 @@ export const searchCatalogWithAI = async (topic: string, catalog: any[]): Promis
   if (!text) return [];
 
   try {
-    return JSON.parse(text) as { id: string; reasoning: string }[];
+    return JSON.parse(text);
   } catch (e) {
     return [];
   }
@@ -563,14 +603,16 @@ export const generateThemesForCourse = async (context: CourseContext): Promise<s
   - TEMA: "${context.topic}"
   - NIVEL: "${context.depth}"
   - AUDIENCIA: "${context.audience}"
-  - EMPRESA/SITUACIÓN: "${context.targetCompany}"
+  - EMPRESA/CLIENTE: "${context.targetCompany}"
+  - SECTOR/INDUSTRIA: "${context.industry}"
   - FOCO ESPECIAL: "${context.specialFocus}"
   - RESULTADO DESEADO: "${context.desiredOutcome}"
   
-  REGLAS:
-  1. Deben ser títulos de temas profesionales y técnicos.
+  REGLAS DE DISEÑO CONSULTIVO:
+  1. Deben ser títulos de temas ejecutivos, técnicos y orientados a la implementación real.
   2. No incluyas números (ej. "Módulo 1").
-  3. Responde únicamente con un arreglo JSON de strings.`;
+  3. Usa terminología de alto nivel (ROI, KPIs, Transformación, Optimización).
+  4. Responde únicamente con un arreglo JSON de strings.`;
 
   const response = await ai.models.generateContent({
     model: 'gemini-3-flash-preview',

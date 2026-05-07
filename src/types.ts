@@ -89,6 +89,9 @@ export interface CourseContext {
   audience: string;
   depth: 'Básico' | 'Intermedio' | 'Avanzado';
   targetCompany: string;
+  industry: string;
+  companySize?: string;
+  userRole?: string;
   specialFocus: string;
   preferredDuration: string;
   desiredOutcome: string;

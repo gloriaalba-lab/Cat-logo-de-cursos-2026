@@ -2,18 +2,20 @@
 import React, { useState } from 'react';
 import { Logo } from './Logo';
 import { CourseStrategy, ModuleOutline } from '../types';
+import { trackMetric, MetricType } from '../services/metricsService';
 import { CheckCircle, Clock, Users, Target, BookOpen, Edit3, Save, X, Sparkles, ArrowRight, Layers, GraduationCap, ChevronDown, ChevronUp, Search, FileText, Share2, MessageCircle, MapPin, Mail, Phone, Zap, BrainCircuit, Briefcase, UserCircle, Globe, Calendar } from 'lucide-react';
 import { asBlob } from 'html-docx-js-typescript';
-import { BOOKING_URL } from '../src/constants';
+import { BOOKING_URL } from '../constants';
 
 interface StepStrategyProps {
   strategy: CourseStrategy;
   onBack: () => void;
+  onHome?: () => void;
   onConfirm: (strategy: CourseStrategy) => void;
   isLoading: boolean;
 }
 
-export const StepStrategy: React.FC<StepStrategyProps> = ({ strategy, onBack, onConfirm, isLoading }) => {
+export const StepStrategy: React.FC<StepStrategyProps> = ({ strategy, onBack, onHome, onConfirm, isLoading }) => {
   const [editedStrategy, setEditedStrategy] = useState<CourseStrategy>(strategy);
 
   const cleanModuleTitle = (title: string) => {
@@ -21,8 +23,8 @@ export const StepStrategy: React.FC<StepStrategyProps> = ({ strategy, onBack, on
   };
 
   const cleanObjective = (obj: string) => {
-    return obj.replace(/^Al finalizar el curso,?\s+(el participante|el asistente|el alumno)\s+/i, '')
-              .replace(/^Al finalizar el curso,?\s+/i, '')
+    return obj.replace(/^Al finalizar la intervención,?\s+(el participante|el asistente|el alumno)\s+/i, '')
+              .replace(/^Al finalizar la intervención,?\s+/i, '')
               .replace(/^(el participante|el asistente|el alumno)\s+/i, '');
   };
 
@@ -125,7 +127,7 @@ export const StepStrategy: React.FC<StepStrategyProps> = ({ strategy, onBack, on
         </div>
 
         <h1>${title}</h1>
-        <p class='subtitle'>Solución de Arquitectura Académica</p>
+        <p class='subtitle'>Arquitectura de Soluciones • Motor Estratégico</p>
 
         <table width='100%' style='margin-bottom: 40px;'>
           <tr>
@@ -305,6 +307,7 @@ export const StepStrategy: React.FC<StepStrategyProps> = ({ strategy, onBack, on
     `;
 
     const blob = await asBlob(fullHtml, { orientation: 'portrait', margins: { top: 720, right: 720, bottom: 720, left: 720 } });
+    trackMetric(MetricType.DOWNLOAD_DOCX, { title: editedStrategy.title });
     const url = URL.createObjectURL(blob as Blob);
     const link = document.createElement('a');
     link.href = url;
@@ -325,33 +328,35 @@ export const StepStrategy: React.FC<StepStrategyProps> = ({ strategy, onBack, on
       `📚 *Temario:* \n${syllabusText}\n\n` +
       `📑 _Diseñado por cademmy learning SAS_ \n_www.cademmy.com_`;
     
+    trackMetric(MetricType.STRATEGY_SHARED, { platform: 'whatsapp', title: editedStrategy.title });
     const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
     window.open(url, '_blank');
   };
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 animate-fade-in">
-      <div className="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-6 no-print">
-        <div className="flex flex-col gap-4">
+      <div className="mb-8 flex flex-col md:flex-row justify-between items-center gap-6 no-print">
+        <div className="flex flex-col gap-4 w-full md:w-auto">
             <div className="flex gap-2">
               <button 
                 onClick={onBack} 
-                className="px-4 py-2 bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 text-[11px] font-black uppercase tracking-widest rounded-xl transition-all flex items-center gap-2 shadow-sm w-fit"
+                className="px-6 py-3 bg-white border-2 border-slate-200 text-slate-800 hover:border-orange-500 hover:text-orange-600 text-xs font-black uppercase tracking-widest rounded-2xl transition-all flex items-center gap-2 shadow-sm w-full md:w-fit justify-center group"
               >
-                  <ArrowRight className="w-4 h-4 rotate-180 text-orange-500" /> Regresar
+                  <ArrowRight className="w-4 h-4 rotate-180 text-orange-500 group-hover:-translate-x-1 transition-transform" /> 
+                  Regresar al Inicio
               </button>
             </div>
-            <div>
+            <div className="text-center md:text-left">
               <h2 className="text-3xl font-black text-slate-800 tracking-tight italic">cademmy <span className="text-orange-500 not-italic">mentor</span></h2>
               <p className="text-slate-500 font-bold text-xs uppercase tracking-widest mt-1">Estrategia Instruccional de Alto Impacto</p>
             </div>
         </div>
-        <div className="flex flex-wrap gap-3">
+        <div className="flex flex-wrap gap-2 sm:gap-3 w-full sm:w-auto">
             <button 
               onClick={handleDownloadWord}
-              className="px-4 py-3 bg-slate-900 text-white font-black rounded-xl hover:bg-slate-800 transition-all flex items-center gap-2 text-xs shadow-xl shadow-slate-100 uppercase tracking-widest"
+              className="flex-1 sm:flex-none px-4 py-3 bg-slate-900 text-white font-black rounded-xl hover:bg-slate-800 transition-all flex items-center justify-center gap-2 text-[10px] sm:text-xs shadow-xl shadow-slate-100 uppercase tracking-widest"
             >
-              <FileText className="w-4 h-4 text-orange-400" /> Descargar Word Pro
+              <FileText className="w-3 sm:w-4 h-3 sm:h-4 text-orange-400" /> Word Pro
             </button>
             <button 
               onClick={handleShareWhatsApp}
@@ -362,16 +367,16 @@ export const StepStrategy: React.FC<StepStrategyProps> = ({ strategy, onBack, on
         </div>
       </div>
 
-      <div id="strategy-document" className="print-container space-y-8 bg-white p-12 rounded-[2.5rem] border border-slate-200 shadow-sm overflow-hidden relative">
+      <div id="strategy-document" className="print-container space-y-8 bg-white p-6 sm:p-12 rounded-[2rem] sm:rounded-[2.5rem] border border-slate-200 shadow-sm overflow-hidden relative">
         
         {/* Cademmy Letterhead */}
-        <div className="flex justify-between items-center border-b-2 border-orange-500 pb-8 mb-12">
+        <div className="flex justify-between items-center border-b-2 border-orange-500 pb-6 sm:pb-8 mb-8 sm:mb-12">
             <button 
-            onClick={onBack}
-            className="hover:opacity-80 transition-opacity cursor-pointer"
+            onClick={onHome || onBack}
+            className="hover:opacity-80 transition-opacity cursor-pointer shrink-0"
             title="Ir al inicio"
           >
-            <Logo size={60} />
+            <Logo size={window.innerWidth < 768 ? 40 : 60} />
           </button>
             <div className="text-right hidden md:block">
                 <div className="flex flex-col items-end gap-2">
@@ -396,7 +401,7 @@ export const StepStrategy: React.FC<StepStrategyProps> = ({ strategy, onBack, on
                     </span>
                   )}
                   <span className="px-3 py-1 bg-slate-50 text-slate-600 rounded-full text-[10px] font-black uppercase tracking-widest border border-slate-100">
-                    Propuesta Cliente
+                    Arquitectura de Solución
                   </span>
                 </div>
                 <div className="mt-2">
@@ -407,62 +412,60 @@ export const StepStrategy: React.FC<StepStrategyProps> = ({ strategy, onBack, on
 
         {/* Title and Profile */}
         <section className="print-section">
-            <div className="text-center mb-12">
-                <div className="flex justify-center gap-4 mb-4">
+            <div className="text-center mb-8 md:mb-12">
+                <div className="flex flex-wrap justify-center gap-2 sm:gap-4 mb-4">
                     {editedStrategy.area && (
-                        <span className="px-4 py-1.5 bg-slate-900 text-white rounded-full text-[10px] font-black uppercase tracking-widest shadow-lg">
+                        <span className="px-3 sm:px-4 py-1 sm:py-1.5 bg-slate-900 text-white rounded-full text-[8px] sm:text-[10px] font-black uppercase tracking-widest shadow-lg">
                             Área: {editedStrategy.area}
                         </span>
                     )}
                     {editedStrategy.category && (
-                        <span className="px-4 py-1.5 bg-orange-600 text-white rounded-full text-[10px] font-black uppercase tracking-widest shadow-lg">
+                        <span className="px-3 sm:px-4 py-1 sm:py-1.5 bg-orange-600 text-white rounded-full text-[8px] sm:text-[10px] font-black uppercase tracking-widest shadow-lg">
                             Categoría: {editedStrategy.category}
                         </span>
                     )}
                 </div>
-                <h1 className="text-5xl font-black text-slate-900 mb-3 tracking-tight">{editedStrategy.title}</h1>
-                <p className="text-orange-600 font-black uppercase tracking-[0.2em] text-xs">Solución de Arquitectura Académica</p>
+                <h1 className="text-2xl sm:text-3xl md:text-5xl font-black text-slate-900 mb-3 tracking-tight px-2">{editedStrategy.title}</h1>
+                <p className="text-orange-600 font-black uppercase tracking-[0.2em] text-[10px] sm:text-xs">Diseño de Arquitectura de Solución</p>
             </div>
             
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-12">
-              <div className="md:col-span-2 space-y-6">
-                <h3 className="text-xl font-black text-slate-800 flex items-center gap-2 uppercase tracking-tight">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-8 mb-12">
+              <div className="sm:col-span-2 lg:col-span-1 space-y-6">
+                <h3 className="text-lg sm:text-xl font-black text-slate-800 flex items-center gap-2 uppercase tracking-tight">
                     1. Perfil del Participante
                 </h3>
-                <div className="bg-slate-50 p-8 rounded-[2rem] border border-slate-100">
-                    <p className="text-slate-400 font-black mb-3 uppercase text-[10px] tracking-widest">Dirigido a:</p>
+                <div className="bg-slate-50 p-6 sm:p-8 rounded-[1.5rem] sm:rounded-[2rem] border border-slate-100">
+                    <p className="text-slate-400 font-black mb-3 uppercase text-[9px] sm:text-[10px] tracking-widest">Dirigido a:</p>
                     <div className="flex flex-wrap gap-2 mb-6">
                         {editedStrategy.targetAudience.directedTo.map((d, i) => (
-                            <span key={i} className="px-4 py-1.5 bg-white border border-slate-200 rounded-full text-xs font-bold text-slate-600 shadow-sm">{d}</span>
+                            <span key={i} className="px-3 py-1 bg-white border border-slate-200 rounded-full text-[10px] sm:text-xs font-bold text-slate-600 shadow-sm">{d}</span>
                         ))}
                     </div>
-                    <p className="text-base text-slate-500 leading-relaxed italic font-medium">"{editedStrategy.targetAudience.participantProfile}"</p>
+                    <p className="text-sm sm:text-base text-slate-500 leading-relaxed italic font-medium">"{editedStrategy.targetAudience.participantProfile}"</p>
                 </div>
               </div>
-              <div className="bg-slate-900 rounded-[2rem] p-8 text-white flex flex-col justify-center items-center text-center shadow-xl">
-                  <Clock className="w-10 h-10 text-orange-400 mb-4" />
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Carga Horaria</p>
-                  <p className="text-3xl font-black text-white">{editedStrategy.totalDuration}</p>
-                  <p className="text-[8px] font-bold text-orange-400/50 uppercase mt-4 tracking-widest">Pedagogía Integral</p>
+              <div className="bg-slate-900 rounded-[1.5rem] sm:rounded-[2rem] p-6 sm:p-8 text-white flex flex-col justify-center items-center text-center shadow-xl">
+                  <Clock className="w-8 h-8 sm:w-10 sm:h-10 text-orange-400 mb-2 sm:mb-4" />
+                  <p className="text-[9px] sm:text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Carga Horaria</p>
+                  <p className="text-2xl sm:text-3xl font-black text-white">{editedStrategy.totalDuration}</p>
               </div>
-              <div className="bg-orange-600 rounded-[2rem] p-8 text-white flex flex-col justify-center items-center text-center shadow-xl">
-                  <Zap className="w-10 h-10 text-white mb-4" />
-                  <p className="text-[10px] font-black text-orange-200 uppercase tracking-widest mb-1">Inversión Estimada</p>
-                  <p className="text-3xl font-black text-white">{formatCurrency(totalInvestment)}</p>
-                  <p className="text-[8px] font-bold text-white/50 uppercase mt-4 tracking-widest">Garantía de Calidad</p>
+              <div className="bg-orange-600 rounded-[1.5rem] sm:rounded-[2rem] p-6 sm:p-8 text-white flex flex-col justify-center items-center text-center shadow-xl">
+                  <Zap className="w-8 h-8 sm:w-10 sm:h-10 text-white mb-2 sm:mb-4" />
+                  <p className="text-[9px] sm:text-[10px] font-black text-orange-200 uppercase tracking-widest mb-1">Inversión Estimada</p>
+                  <p className="text-2xl sm:text-3xl font-black text-white">{formatCurrency(totalInvestment)}</p>
               </div>
             </div>
         </section>
 
         {/* General Objective */}
         <section className="print-section mb-12">
-            <h3 className="text-xl font-black text-slate-800 flex items-center gap-2 uppercase tracking-tight mb-6">
+            <h3 className="text-lg sm:text-xl font-black text-slate-800 flex items-center gap-2 uppercase tracking-tight mb-6">
                 2. Objetivo General
             </h3>
-            <div className="p-10 bg-slate-900 border-2 border-slate-800 rounded-[2.5rem] text-white font-bold text-2xl shadow-xl text-center leading-relaxed relative overflow-hidden">
+            <div className="p-6 sm:p-10 bg-slate-900 border-2 border-slate-800 rounded-[1.5rem] sm:rounded-[2.5rem] text-white font-bold text-lg sm:text-2xl shadow-xl text-center leading-relaxed relative overflow-hidden">
                 <div className="flex flex-col items-center gap-4">
                   {getBloomLevel(editedStrategy.generalObjective) && (
-                    <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border ${getBloomLevel(editedStrategy.generalObjective)?.color.replace('bg-', 'bg-white/10 ').replace('text-', 'text-white ')}`}>
+                    <span className={`px-2 sm:px-3 py-0.5 sm:py-1 rounded-full text-[8px] sm:text-[10px] font-black uppercase tracking-widest border ${getBloomLevel(editedStrategy.generalObjective)?.color.replace('bg-', 'bg-white/10 ').replace('text-', 'text-white ')}`}>
                       Nivel Bloom: {getBloomLevel(editedStrategy.generalObjective)?.level}
                     </span>
                   )}
@@ -574,8 +577,8 @@ export const StepStrategy: React.FC<StepStrategyProps> = ({ strategy, onBack, on
             <h3 className="text-xl font-black text-slate-800 flex items-center gap-2 uppercase tracking-tight mb-6">
                 5. ¿Cómo logramos estos beneficios?
             </h3>
-            <div className="overflow-hidden border border-slate-100 rounded-[2rem] shadow-sm">
-                <table className="w-full text-left border-collapse">
+            <div className="overflow-x-auto -mx-6 sm:mx-0 border border-slate-100 sm:rounded-[2rem] shadow-sm">
+                <table className="min-w-[600px] w-full text-left border-collapse">
                     <thead>
                         <tr className="bg-slate-50 border-b border-slate-100">
                             <th className="p-6 text-[10px] font-black text-slate-400 uppercase tracking-widest">Beneficio</th>
@@ -744,20 +747,21 @@ export const StepStrategy: React.FC<StepStrategyProps> = ({ strategy, onBack, on
         </div>
       </div>
 
-      <div className="mt-12 flex flex-col md:flex-row justify-center gap-6 no-print">
+        <div className="mt-12 flex flex-col sm:flex-row justify-center gap-4 sm:gap-6 no-print">
         <button 
             onClick={onBack} 
-            className="px-12 py-6 bg-white border-2 border-slate-200 text-slate-600 font-black text-xl rounded-3xl shadow-xl hover:bg-slate-50 transition-all flex items-center gap-4 hover:scale-105"
+            className="px-6 sm:px-12 py-4 sm:py-6 bg-white border-2 border-slate-200 text-slate-600 font-black text-lg sm:text-xl rounded-2xl sm:rounded-3xl shadow-xl hover:bg-slate-50 transition-all flex items-center justify-center gap-4 hover:scale-[1.02]"
         >
-            <ArrowRight className="w-6 h-6 rotate-180 text-orange-500" /> EDITAR FORMULARIO
+            <ArrowRight className="w-5 sm:w-6 h-5 sm:h-6 rotate-180 text-orange-500" /> AJUSTAR ARQUITECTURA
         </button>
         <a 
             href={BOOKING_URL}
             target="_blank"
             rel="noopener noreferrer"
-            className="px-12 py-6 bg-orange-500 text-white font-black text-xl rounded-3xl shadow-xl hover:bg-orange-600 transition-all flex items-center gap-4 hover:scale-105"
+            onClick={() => trackMetric(MetricType.BOOKING_CLICKED, { location: 'strategy_bottom_cta', title: editedStrategy.title })}
+            className="px-6 sm:px-12 py-4 sm:py-6 bg-orange-600 text-white font-black text-lg sm:text-xl rounded-2xl sm:rounded-3xl shadow-xl hover:bg-orange-600 transition-all flex items-center justify-center gap-4 hover:scale-[1.02]"
         >
-            ACEPTAR Y AGENDAR UNA CITA <Calendar className="w-6 h-6" />
+            CONSULTORÍA EJECUTIVA <Calendar className="w-5 sm:w-6 h-5 sm:h-6" />
         </a>
       </div>
     </div>

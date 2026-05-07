@@ -2,12 +2,14 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Logo } from './Logo';
 import { Sparkles, Upload, ShieldCheck, Zap, GraduationCap, Users, FileText, X, FileUp, Building2, MessageSquare, HelpCircle, Clock, Search, ArrowRight, CheckCircle2, BookOpen, Calendar, Target, Plus, Trash2, Edit2, ArrowUp, ArrowDown } from 'lucide-react';
 import { Course, CourseContext } from '../types';
-import { courseCatalog, CatalogCourse } from '../src/data/catalog';
+import { courseCatalog, CatalogCourse } from '../data/catalog';
 import { generateTitleSuggestions, searchCatalogWithAI, generateThemesForCourse } from '../services/geminiService';
+import { trackMetric, MetricType } from '../services/metricsService';
+import { BOOKING_URL } from '../constants';
 
 interface StepInputProps {
   onStart: (context: CourseContext) => void;
-  onSelectCatalogCourse?: (course: CatalogCourse) => void;
+  onSelectCatalogCourse?: (course: CatalogCourse & { rephrasedTitle?: string; executiveSummary?: string }) => void;
   onImport: (course: Course) => void;
   isLoading: boolean;
   initialContext?: CourseContext | null;
@@ -25,6 +27,9 @@ export const StepInput: React.FC<StepInputProps> = ({
   const [audience, setAudience] = useState(initialContext?.audience || '');
   const [depth, setDepth] = useState<CourseContext['depth']>(initialContext?.depth || 'Intermedio');
   const [targetCompany, setTargetCompany] = useState(initialContext?.targetCompany || '');
+  const [industry, setIndustry] = useState(initialContext?.industry || '');
+  const [companySize, setCompanySize] = useState(initialContext?.companySize || '');
+  const [userRole, setUserRole] = useState(initialContext?.userRole || '');
   const [specialFocus, setSpecialFocus] = useState(initialContext?.specialFocus || '');
   const [preferredDuration, setPreferredDuration] = useState(initialContext?.preferredDuration || '');
   const [desiredOutcome, setDesiredOutcome] = useState(initialContext?.desiredOutcome || '');
@@ -36,15 +41,23 @@ export const StepInput: React.FC<StepInputProps> = ({
   const [activeHelp, setActiveHelp] = useState<string | null>(null);
   const [showUploadChoice, setShowUploadChoice] = useState(false);
   const [formStep, setFormStep] = useState(initialContext ? 2 : 1);
-  const [catalogResults, setCatalogResults] = useState<(CatalogCourse & { reasoning?: string })[]>([]);
+  const [catalogResults, setCatalogResults] = useState<(CatalogCourse & { 
+    reasoning?: string; 
+    rephrasedTitle?: string; 
+    businessImpact?: string[]; 
+    alignmentScore?: number;
+    executiveSummary?: string;
+  })[]>([]);
   const [isSearchingCatalog, setIsSearchingCatalog] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [showCatalogModal, setShowCatalogModal] = useState(false);
   const [titleSuggestions, setTitleSuggestions] = useState<string[]>([]);
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
+  const [isTransitioningToCustom, setIsTransitioningToCustom] = useState(false);
   const [selectedLevel, setSelectedLevel] = useState<CourseContext['depth'] | null>(null);
   const [proposalData, setProposalData] = useState<any>(null);
   const [loadingMessage, setLoadingMessage] = useState('ANALIZANDO PARÁMETROS...');
+  const [microStage, setMicroStage] = useState('');
 
   const PRICE_PER_HOUR = 1990;
   const formatCurrency = (amount: number) => {
@@ -66,12 +79,12 @@ export const StepInput: React.FC<StepInputProps> = ({
 
     let messages = [
       'ANALIZANDO PARÁMETROS...',
-      'CONSULTANDO CATÁLOGO DE CURSOS...',
-      'ESTRUCTURANDO PROPUESTA PRELIMINAR...',
-      'OPTIMIZANDO OBJETIVOS DE APRENDIZAJE...',
-      'PERSONALIZANDO CONTENIDO PARA TU EMPRESA...',
-      'DISEÑANDO RUTA DE CAPACITACIÓN...',
-      'CASI LISTO, DANDO ÚLTIMOS TOQUES...',
+      'EVALUANDO REPOSITORIO DE SOLUCIONES...',
+      'ESTRUCTURANDO SOLUCIÓN ESTRATÉGICA...',
+      'OPTIMIZANDO IMPACTO ORGANIZACIONAL...',
+      'PERSONALIZANDO PARA TU CONTEXTO EMPRESARIAL...',
+      'DISEÑANDO ARQUITECTURA DE CAPACITACIÓN...',
+      'PREPARANDO PROPUESTA EJECUTIVA...',
     ];
 
     if (isGeneratingThemes) {
@@ -79,36 +92,56 @@ export const StepInput: React.FC<StepInputProps> = ({
         'MAPEO DE TEMAS ESTRATÉGICOS...',
         'ANALIZANDO COMPETENCIAS REQUERIDAS...',
         'ESTRUCTURANDO RUTA DE APRENDIZAJE...',
-        'DEFINIENDO MÓDULOS DEL CURSO...',
+        'DEFINIENDO EJES DE LA INTERVENCIÓN...',
         'CONSULTANDO MEJORES PRÁCTICAS...',
       ];
     } else if (isLoadingSuggestions) {
       messages = [
-        'BUSCANDO EN EL REPOSITORIO...',
-        'ANALIZANDO TENDENCIAS...',
-        'GENERANDO OPCIONES RELEVANTES...',
-        'REFINANDO TÍTULOS SUGERIDOS...',
-        'PREPARANDO PROPUESTAS...',
+        'CONSULTANDO MODELOS DE DESEMPEÑO...',
+        'ANALIZANDO TENDENCIAS EMPRESARIALES...',
+        'GENERANDO RUTAS DE SOLUCIÓN...',
+        'REFINANDO PROPUESTAS ESTRATÉGICAS...',
+        'PREPARANDO ESCENARIOS...',
       ];
     } else if (isSearchingCatalog) {
       messages = [
-        'BUSCANDO EN EL CATÁLOGO...',
-        'FILTRANDO POR RELEVANCIA...',
-        'IDENTIFICANDO COINCIDENCIAS SEMÁNTICAS...',
-        'PREPARANDO RESULTADOS...',
+        'ANALIZANDO BRECHAS ORGANIZACIONALES...',
+        'ARQUITECTANDO PROPUESTA DE CAPACITACIÓN...',
+        'EVALUANDO IMPACTO ESPERADO Y CONTEXTO OPERATIVO...',
+        'PREPARANDO DESPLIEGUE ESTRATÉGICO...',
       ];
     }
 
     let currentIndex = 0;
     setLoadingMessage(messages[0]);
     
+    // Strategic micro-stages rotate faster to increase perception of depth
+    const microStages = [
+      'Correlacionando brechas de desempeño...',
+      'Analizando impacto organizacional...',
+      'Priorizando soluciones de capacitación...',
+      'Estructurando arquitectura formativa...',
+      'Evaluando ROI proyectado...',
+      'Sincronizando con objetivos de negocio...'
+    ];
+    let microIndex = 0;
+    setMicroStage(microStages[0]);
+    
     const interval = setInterval(() => {
       currentIndex = (currentIndex + 1) % messages.length;
       setLoadingMessage(messages[currentIndex]);
     }, 2500);
 
-    return () => clearInterval(interval);
-  }, [isLoading, isLoadingSuggestions, isSearchingCatalog]);
+    const microInterval = setInterval(() => {
+      microIndex = (microIndex + 1) % microStages.length;
+      setMicroStage(microStages[microIndex]);
+    }, 1500);
+
+    return () => {
+      clearInterval(interval);
+      clearInterval(microInterval);
+    };
+  }, [isLoading, isLoadingSuggestions, isSearchingCatalog, isGeneratingThemes]);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -168,6 +201,7 @@ export const StepInput: React.FC<StepInputProps> = ({
     setAudience('');
     setDepth('Intermedio');
     setTargetCompany('');
+    setIndustry('');
     setSpecialFocus('');
     setPreferredDuration('');
     setProposalFile(null);
@@ -177,11 +211,17 @@ export const StepInput: React.FC<StepInputProps> = ({
 
   const isFormValid = 
     targetCompany.trim().length > 0 &&
-    specialFocus.trim().length > 0 &&
+    industry.trim().length > 0 &&
     topic.trim().length > 0 &&
     audience.trim().length > 0 &&
     preferredDuration.trim().length > 0 &&
     desiredOutcome.trim().length > 0;
+
+  const isContextValid = 
+    targetCompany.trim().length > 0 &&
+    industry.trim().length > 0 &&
+    companySize.trim().length > 0 &&
+    userRole.trim().length > 0;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -194,6 +234,7 @@ export const StepInput: React.FC<StepInputProps> = ({
           audience,
           depth,
           targetCompany,
+          industry,
           specialFocus,
           preferredDuration,
           desiredOutcome,
@@ -212,6 +253,7 @@ export const StepInput: React.FC<StepInputProps> = ({
       // If form is not valid, try to show which fields are missing
       const missing = [];
       if (!targetCompany.trim()) missing.push('Empresa');
+      if (!industry.trim()) missing.push('Industria');
       if (!specialFocus.trim()) missing.push('Foco');
       if (!topic.trim()) missing.push('Tema');
       if (!audience.trim()) missing.push('Público');
@@ -228,66 +270,86 @@ export const StepInput: React.FC<StepInputProps> = ({
     e.preventDefault();
     if (!topic.trim()) return;
 
-    setIsSearchingCatalog(true);
-    setShowCatalogModal(true); 
+    trackMetric(MetricType.SEARCH_PERFORMED, { query: topic.trim() });
     
-    // 1. Keyword search (baseline)
-    const keywordResults = courseCatalog.filter(course => 
-      course.title.toLowerCase().includes(topic.toLowerCase()) ||
-      course.category.toLowerCase().includes(topic.toLowerCase()) ||
-      course.area.toLowerCase().includes(topic.toLowerCase()) ||
-      course.objective.toLowerCase().includes(topic.toLowerCase()) ||
-      course.content.toLowerCase().includes(topic.toLowerCase()) ||
-      course.benefits.toLowerCase().includes(topic.toLowerCase()) ||
-      course.targetAudience.toLowerCase().includes(topic.toLowerCase())
-    );
-
-    if (keywordResults.length > 0) {
-      setCatalogResults(keywordResults.map(r => ({ ...r, reasoning: 'Coincidencia directa encontrada.' })));
-    } else {
-      setCatalogResults([]);
-    }
+    // 1. Initial State: Show modal with loader immediately for feedback
+    setCatalogResults([]);
+    setTitleSuggestions([]);
+    setIsSearchingCatalog(true);
+    setShowCatalogModal(true);
+    setLoadingMessage('IDENTIFICANDO LA MEJOR SOLUCIÓN...');
 
     try {
-      // 2. AI Semantic Search in Catalog
-      const aiResults = await searchCatalogWithAI(topic, courseCatalog);
+      // 2. Parallelize: AI Catalog Search AND Title Suggestions
+      const [aiCatalogResults, suggestions] = await Promise.all([
+        searchCatalogWithAI(topic, courseCatalog, {
+          industry,
+          company: targetCompany,
+          role: userRole,
+          problem: topic
+        }).catch(err => {
+          console.error("Catalog search error:", err);
+          return [] as any[];
+        }),
+        generateTitleSuggestions(topic).catch(err => {
+          console.error("Suggestions error:", err);
+          return [] as string[];
+        })
+      ]);
       
+      setTitleSuggestions(suggestions);
+      
+      // 3. Robust Keyword Match Fallback (Split terms for better coverage)
+      const searchTerms = topic.toLowerCase().split(/\s+/).filter(t => t.length > 2);
+      const keywordResults = courseCatalog.filter(course => {
+        const fullText = `${course.title} ${course.area} ${course.objective} ${course.category}`.toLowerCase();
+        // Match if any significant term is present
+        return searchTerms.some(term => fullText.includes(term)) || fullText.includes(topic.toLowerCase());
+      });
+
+      // 4. Merge results (prefer AI reasoning if available)
       const mergedResults = courseCatalog
         .map(course => {
-          const aiMatch = aiResults.find(r => r.id === course.id);
+          const aiMatch = aiCatalogResults.find(r => r.id === course.id);
           const isKeywordMatch = keywordResults.some(r => r.id === course.id);
           
           if (aiMatch || isKeywordMatch) {
             return {
               ...course,
-              reasoning: aiMatch?.reasoning || (isKeywordMatch ? 'Coincidencia directa por palabras clave.' : undefined)
-            } as CatalogCourse & { reasoning?: string };
+              reasoning: aiMatch?.reasoning || (isKeywordMatch ? 'Identificado por relevancia temática.' : undefined),
+              rephrasedTitle: aiMatch?.rephrasedTitle,
+              businessImpact: aiMatch?.businessImpact,
+              alignmentScore: aiMatch?.alignmentScore || (isKeywordMatch ? 85 : undefined),
+              executiveSummary: aiMatch?.executiveSummary
+            };
           }
           return null;
         })
-        .filter((c): c is (CatalogCourse & { reasoning?: string }) => c !== null);
+        .filter((c): c is any => c !== null)
+        .sort((a, b) => (b.alignmentScore || 0) - (a.alignmentScore || 0));
 
-      setCatalogResults(mergedResults);
-
-      // 3. Fallback logic: if NO catalog results found, automatically trigger repository suggestions as part of the unified process
-      if (mergedResults.length === 0) {
-        setIsSearchingCatalog(false); // Stop "searching catalog" loader
-        setIsLoadingSuggestions(true); // Start "repository" loader
-        try {
-          const suggestions = await generateTitleSuggestions(topic);
-          setTitleSuggestions(suggestions);
-          setShowCatalogModal(false); // Close catalog modal if we're moving to suggestions
-          setFormStep(1.5); // Move to suggestions view
-        } catch (suggestionError) {
-          console.error("Suggestion error:", suggestionError);
-        } finally {
-          setIsLoadingSuggestions(false);
+      // 5. Handling outcome
+      if (mergedResults.length > 0) {
+        // Hits found -> Show them in the modal
+        setCatalogResults(mergedResults);
+        setIsSearchingCatalog(false);
+      } else {
+        // NO catalog hits -> Close modal and AUTOMATE transition to Step 1.5 or 2
+        setCatalogResults([]);
+        setIsSearchingCatalog(false);
+        setShowCatalogModal(false);
+        
+        if (suggestions.length > 0) {
+          setFormStep(1.5);
+        } else {
+          setFormStep(2);
         }
       }
     } catch (error) {
-      console.error("Error in unified search:", error);
-    } finally {
+      console.error("Unified search critical error:", error);
       setIsSearchingCatalog(false);
+      setShowCatalogModal(false);
+      setFormStep(2);
     }
   };
 
@@ -306,18 +368,36 @@ export const StepInput: React.FC<StepInputProps> = ({
     }
   };
 
-  const selectCatalogCourse = (course: CatalogCourse) => {
-    if (onSelectCatalogCourse) {
-      onSelectCatalogCourse(course);
+  const selectCatalogCourse = (course: CatalogCourse & { rephrasedTitle?: string; executiveSummary?: string }) => {
+    // We handle the selection locally to allow axis confirmation before generation
+    setTopic(course.rephrasedTitle || course.title);
+    setDesiredOutcome(course.executiveSummary || course.objective);
+    setAudience(course.targetAudience);
+    setPreferredDuration(`${course.hours} horas`);
+    setSpecialFocus(`Arquitectura de solución estratégica: ${course.id}. ${course.category}`);
+    setTargetCompany(targetCompany || 'Empresa Cliente'); 
+    setShowCatalogModal(false);
+    
+    // Extract themes/axes from catalog content for review
+    const themes = course.content
+      .split(/\d+\.\s+/)
+      .filter(t => t.trim().length > 0)
+      .map(t => t.trim());
+    
+    if (themes.length > 0) {
+      setConfirmedThemes(themes);
+      setFormStep(1.9); // Go to Strategic Axes Review step
     } else {
-      setTopic(course.title);
-      setAudience(course.targetAudience);
-      setPreferredDuration(`${course.hours} horas`);
-      setSpecialFocus(`Basado en el curso del catálogo: ${course.id}. ${course.category}`);
-      setTargetCompany('Empresa Cliente'); // Set a default to ensure form validity
-      setShowCatalogModal(false);
-      setFormStep(2);
+      setFormStep(2); // Fallback to details form if no structure found
     }
+    
+    // Explicitly track the selection
+    trackMetric(MetricType.CATALOG_VIEWED, { 
+      title: course.title,
+      industry: course.area,
+      category: course.category,
+      source: 'catalog_modal'
+    });
   };
 
   const handleGoToLevelSelection = (selectedTopic?: string) => {
@@ -349,6 +429,7 @@ export const StepInput: React.FC<StepInputProps> = ({
       setPreferredDuration(proposalData.hours);
       setAudience(`Personal nivel ${proposalData.level}`);
       setTargetCompany('Empresa Cliente');
+      setIndustry('Industria General');
       setSpecialFocus(`Enfoque en ${topic} - Nivel ${proposalData.level}`);
     }
     setFormStep(2);
@@ -360,6 +441,9 @@ export const StepInput: React.FC<StepInputProps> = ({
       audience: audience.trim(),
       depth,
       targetCompany: targetCompany.trim(),
+      industry: industry.trim(),
+      companySize,
+      userRole,
       specialFocus: specialFocus.trim(),
       preferredDuration: preferredDuration.trim(),
       desiredOutcome: desiredOutcome.trim(),
@@ -426,6 +510,9 @@ export const StepInput: React.FC<StepInputProps> = ({
       audience: audience.trim() || 'Público extraído del documento',
       depth,
       targetCompany: targetCompany.trim() || 'Empresa extraída del documento',
+      industry: industry.trim() || 'Industria extraída del documento',
+      companySize,
+      userRole,
       specialFocus: specialFocus.trim() || 'Foco extraído del documento',
       preferredDuration: preferredDuration.trim() || 'Duración recomendada',
       desiredOutcome: desiredOutcome.trim() || 'Objetivo extraído del documento',
@@ -436,95 +523,147 @@ export const StepInput: React.FC<StepInputProps> = ({
   };
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-12 animate-fade-in font-['Montserrat']">
+    <div className="max-w-4xl mx-auto px-4 sm:px-8 md:px-12 py-8 md:py-20 animate-fade-in font-['Montserrat']">
       {/* Catalog Search Results Modal */}
       {showCatalogModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/90 backdrop-blur-md animate-fade-in">
-          <div className="bg-white w-full max-w-3xl rounded-[3rem] p-10 shadow-2xl animate-scale-in flex flex-col max-h-[90vh]">
-            <div className="flex items-center justify-between mb-8">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-orange-100 rounded-2xl flex items-center justify-center">
-                  <Search className="w-6 h-6 text-orange-600" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-900/90 backdrop-blur-md animate-fade-in">
+          <div className="bg-white w-full max-w-3xl rounded-[2.5rem] md:rounded-[3rem] p-6 md:p-10 shadow-2xl animate-scale-in flex flex-col max-h-[95vh] sm:max-h-[90vh]">
+            <div className="flex items-center justify-between mb-6 md:mb-8">
+              <div className="flex items-center gap-3 md:gap-4">
+                <div className="w-10 h-10 md:w-12 md:h-12 bg-orange-100 rounded-xl flex items-center justify-center shrink-0">
+                  <Search className="w-5 h-5 md:w-6 md:h-6 text-orange-600" />
                 </div>
                 <div>
-                  <h2 className="text-2xl font-black text-slate-900">Resultados en Catálogo</h2>
-                  <p className="text-slate-500 font-medium">Encontramos {catalogResults.length} coincidencias para "{topic}"</p>
+                  <h2 className="text-lg md:text-2xl font-black text-slate-900 leading-tight">
+                    {catalogResults.length > 0 && !isTransitioningToCustom ? 'Arquitecturas de solución recomendadas' : 'Exploración estratégica de soluciones'}
+                  </h2>
+                  <p className="text-[10px] md:text-base text-slate-500 font-medium">
+                    {catalogResults.length > 0 && !isTransitioningToCustom
+                      ? 'Basándonos en tu diagnóstico, hemos identificado las siguientes intervenciones estratégicas para impactar el desempeño organizacional'
+                      : 'Tu necesidad requiere una correlación estratégica más profunda.'}
+                  </p>
                 </div>
               </div>
               <button 
                 onClick={() => setShowCatalogModal(false)}
-                className="p-2 hover:bg-slate-100 rounded-full transition-colors"
+                className="p-2 hover:bg-slate-100 rounded-full transition-colors shrink-0"
               >
-                <X className="w-6 h-6 text-slate-400" />
+                <X className="w-5 h-5 md:w-6 md:h-6 text-slate-400" />
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto pr-4 space-y-4 custom-scrollbar">
-              {isSearchingCatalog && catalogResults.length === 0 ? (
-                <div className="text-center py-20 space-y-6">
-                  <div className="w-16 h-16 border-4 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
-                  <p className="text-xl font-black text-slate-800 uppercase tracking-tight">Buscando en el catálogo...</p>
-                  <p className="text-slate-500 font-medium italic">{loadingMessage}</p>
-                </div>
-              ) : catalogResults.length > 0 ? (
-                catalogResults.map((course) => (
-                  <div 
-                    key={course.id}
-                    onClick={() => selectCatalogCourse(course)}
-                    className="p-6 border-2 border-slate-50 bg-slate-50/50 rounded-3xl hover:border-orange-500 hover:bg-white transition-all cursor-pointer group"
-                  >
-                    <div className="flex justify-between items-start gap-4">
-                      <div className="space-y-2">
-                        <div className="flex items-center gap-2">
-                          <span className="px-3 py-1 bg-orange-100 text-orange-700 text-[10px] font-black rounded-lg uppercase tracking-wider">
-                            {course.id}
-                          </span>
-                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                            {course.area} • {course.hours} HORAS
-                          </span>
-                        </div>
-                        <h3 className="text-xl font-black text-slate-800 group-hover:text-orange-600 transition-colors">
-                          {course.title}
-                        </h3>
-                        {course.reasoning && (
-                          <div className="flex items-start gap-2 p-3 bg-orange-50/50 border border-orange-100 rounded-xl">
-                            <Sparkles className="w-4 h-4 text-orange-500 mt-0.5 shrink-0" />
-                            <p className="text-xs text-orange-800 font-medium italic">
-                              {course.reasoning}
-                            </p>
-                          </div>
-                        )}
-                        <p className="text-sm text-slate-500 line-clamp-2 font-medium">
-                          {course.objective}
-                        </p>
+            <div className="flex-1 overflow-y-auto pr-2 sm:pr-4 space-y-4 custom-scrollbar min-h-[300px] flex flex-col">
+              {isSearchingCatalog ? (
+                <div className="flex-1 flex items-center justify-center py-20">
+                  <div className="text-center space-y-8 animate-fade-in relative overflow-hidden">
+                    <div className="relative z-10 space-y-6">
+                      <div className="w-20 h-20 bg-orange-50 rounded-full flex items-center justify-center mx-auto">
+                        <Sparkles className="w-10 h-10 text-orange-400 animate-pulse" />
                       </div>
-                      <div className="w-10 h-10 rounded-full bg-white shadow-sm flex items-center justify-center group-hover:bg-orange-500 group-hover:text-white transition-all">
-                        <ArrowRight className="w-5 h-5" />
+                      <div className="space-y-3">
+                        <p className="text-2xl font-black text-slate-800 tracking-tight">Analizando brechas organizacionales...</p>
+                        <p className="text-slate-600 font-bold max-w-sm mx-auto px-6 italic">
+                          Nuestro motor está estructurando una solución alineada a tu contexto organizacional.
+                        </p>
+                        <div className="h-6 flex items-center justify-center">
+                          <p className="text-[10px] font-black text-orange-500 uppercase tracking-[0.2em] animate-pulse">
+                            {microStage}
+                          </p>
+                        </div>
+                        <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest pt-2">
+                          Considerando industria, tamaño organizacional, rol y prioridad estratégica.
+                        </p>
                       </div>
                     </div>
                   </div>
-                ))
+                </div>
+              ) : catalogResults.length > 0 ? (
+                <div className="space-y-4 pb-4 animate-fade-in">
+                  {catalogResults.map((course, index) => (
+                    <div 
+                      key={course.id}
+                      onClick={() => selectCatalogCourse(course)}
+                      className="p-4 sm:p-6 border-2 border-slate-50 bg-slate-50/50 rounded-3xl hover:border-orange-500 hover:bg-white transition-all cursor-pointer group shadow-sm hover:shadow-orange-100/50 relative overflow-hidden"
+                    >
+                      {course.alignmentScore && (
+                        <div className="absolute top-0 right-0 px-4 py-2 bg-slate-900 text-white text-[10px] font-black rounded-bl-2xl flex items-center gap-2">
+                           <Zap className="w-3 h-3 text-orange-400" />
+                           {course.alignmentScore}% ALINEACIÓN ESTRATÉGICA
+                        </div>
+                      )}
+
+                      {index === 0 && (
+                        <div className="flex items-center gap-2 mb-3">
+                          <Sparkles className="w-3.5 h-3.5 text-orange-500" />
+                          <span className="text-[10px] font-black text-orange-600 uppercase tracking-widest">Recomendación prioritaria</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between items-start gap-4">
+                        <div className="space-y-4 w-full">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="px-3 py-1 bg-orange-100 text-orange-700 text-[10px] font-black rounded-lg uppercase tracking-wider">
+                              {course.id}
+                            </span>
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                              {course.area} • {course.hours} HORAS
+                            </span>
+                          </div>
+                          
+                          <div className="space-y-1">
+                            <h3 className="text-lg sm:text-2xl font-black text-slate-800 group-hover:text-orange-600 transition-colors leading-tight">
+                              {course.rephrasedTitle || course.title}
+                            </h3>
+                            {course.rephrasedTitle && (
+                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                                Basado en: {course.title}
+                              </p>
+                            )}
+                          </div>
+                          
+                          <p className="text-sm text-slate-500 font-medium leading-relaxed">
+                            {course.executiveSummary || course.objective}
+                          </p>
+
+                          {course.businessImpact && course.businessImpact.length > 0 && (
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+                              {course.businessImpact.map((impact, i) => (
+                                <div key={i} className="flex items-center gap-2 px-3 py-2 bg-orange-50/50 border border-orange-100 rounded-xl">
+                                  <CheckCircle2 className="w-3 h-3 text-orange-500 shrink-0" />
+                                  <span className="text-[9px] font-black text-orange-800 uppercase tracking-tight">{impact}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          
+                          {course.reasoning && (
+                            <div className="flex items-start gap-2 p-3 bg-white border border-slate-100 rounded-xl">
+                              <Target className="w-4 h-4 text-orange-500 mt-0.5 shrink-0" />
+                              <p className="text-xs text-slate-600 font-medium italic">
+                                {course.reasoning}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                        <div className="w-10 h-10 rounded-full bg-white shadow-sm flex items-center justify-center shrink-0 group-hover:bg-orange-500 group-hover:text-white transition-all">
+                          <ArrowRight className="w-5 h-5" />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               ) : (
-                <div className="text-center py-12 space-y-8">
-                  <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mx-auto">
-                    <Search className="w-10 h-10 text-slate-300" />
+                <div className="flex-1 flex items-center justify-center py-20">
+                  <div className="text-center space-y-6 animate-fade-in bg-white rounded-[3rem] border border-slate-100 shadow-sm p-12">
+                    <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto">
+                      <Search className="w-10 h-10 text-slate-200" />
+                    </div>
+                    <div className="space-y-2">
+                      <p className="text-2xl font-black text-slate-800 uppercase tracking-tight">Estructurando arquitectura de solución</p>
+                      <p className="text-slate-500 font-medium max-w-sm mx-auto">
+                        Tu necesidad requiere una correlación estratégica más profunda. Nuestro motor está estructurando una solución alineada a tu contexto organizacional.
+                      </p>
+                    </div>
                   </div>
-                  <div className="space-y-4">
-                    <p className="text-2xl font-black text-slate-800">No hay coincidencias exactas</p>
-                    <p className="text-xl font-black text-orange-600 uppercase tracking-tight max-w-md mx-auto">
-                      ¿No es lo que buscabas? Cierra esta ventana y usa el buscador del repositorio
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => {
-                      setShowCatalogModal(false);
-                      handleGoToSuggestions();
-                    }}
-                    className="px-8 py-4 bg-slate-900 text-white font-black rounded-2xl hover:bg-black transition-all flex items-center justify-center gap-3 mx-auto group"
-                  >
-                    BUSCAR CURSOS EN EL REPOSITORIO ESPECIALIZADO
-                    <Sparkles className="w-5 h-5 text-orange-400 group-hover:rotate-12 transition-transform" />
-                  </button>
                 </div>
               )}
             </div>
@@ -535,12 +674,45 @@ export const StepInput: React.FC<StepInputProps> = ({
                 className="group flex items-center gap-2 text-xs font-black text-slate-400 hover:text-orange-600 uppercase tracking-widest transition-all"
               >
                 <ArrowRight className="w-4 h-4 rotate-180 group-hover:-translate-x-1 transition-transform" />
-                Regresar a la búsqueda
+                Volver
               </button>
-              {catalogResults.length > 0 && (
-                <p className="text-lg font-black text-orange-600 uppercase tracking-tight text-center">
-                  ¿No es lo que buscabas? Cierra esta ventana y usa el buscador del repositorio
-                </p>
+              
+              {catalogResults.length > 0 && !isLoadingSuggestions && (
+                <div className="w-full space-y-8 animate-fade-in-up">
+                  <div className="p-10 bg-slate-50 border border-slate-100 rounded-[2.5rem] text-center space-y-4">
+                    <p className="text-xl font-black text-slate-800 tracking-tight">¿Deseas validar esta arquitectura con un experto?</p>
+                    <p className="text-sm text-slate-500 font-medium leading-relaxed max-w-lg mx-auto">
+                      Un asesor ejecutivo puede ayudarte a correlacionar estas soluciones con tus prioridades de negocio y KPIs.
+                    </p>
+                    <a 
+                      href={BOOKING_URL} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-3 px-8 py-4 bg-orange-600 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-orange-700 transition-all shadow-lg shadow-orange-100"
+                    >
+                      <Calendar className="w-4 h-4" /> SOLICITAR ASESORÍA EJECUTIVA
+                    </a>
+                  </div>
+
+                  <div className="w-full space-y-4">
+                    <div className="flex items-center gap-4">
+                      <div className="h-px flex-1 bg-slate-100"></div>
+                      <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest">¿Necesitas algo más específico?</p>
+                      <div className="h-px flex-1 bg-slate-100"></div>
+                    </div>
+                    
+                    <button
+                      onClick={() => {
+                        setShowCatalogModal(false);
+                        setFormStep(2);
+                      }}
+                      className="w-full py-4 bg-orange-500 text-white font-black text-xs rounded-2xl hover:bg-orange-600 transition-all flex items-center justify-center gap-2 uppercase tracking-widest shadow-lg shadow-orange-100"
+                    >
+                      <Target className="w-4 h-4" />
+                      Solicitar arquitectura personalizada
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
           </div>
@@ -579,36 +751,43 @@ export const StepInput: React.FC<StepInputProps> = ({
         </div>
       )}
 
-      <div className="text-center mb-16">
+      <div className="text-center mb-8 md:mb-16">
         {formStep === 1 ? (
           <div className="animate-fade-in">
-            <div className="inline-flex items-center gap-2 px-6 py-2 bg-white text-orange-600 rounded-full text-[10px] font-black uppercase tracking-widest mb-12 border border-orange-100 shadow-xl shadow-orange-100/50">
-               <ShieldCheck className="w-4 h-4" /> CADEMMY LEARNING SAS • MENTOR VIRTUAL
+            <div className="inline-flex items-center gap-2 px-6 py-2 bg-white text-orange-600 rounded-full text-[9px] md:text-[10px] font-black uppercase tracking-widest mb-8 md:mb-12 border border-orange-100 shadow-xl shadow-orange-100/50">
+               <ShieldCheck className="w-4 h-4" /> MOTOR ESTRATÉGICO 2026
             </div>
             
-            <div className="space-y-6 mb-12">
-              <h1 className="text-5xl md:text-7xl font-black text-slate-800 leading-none tracking-tight px-4">
-                Catálogo de cursos <span className="text-orange-500 block md:inline">2026</span>
+            <div className="space-y-4 md:space-y-6 mb-8 md:mb-12">
+              <h1 className="text-4xl sm:text-5xl md:text-7xl font-black text-slate-800 leading-none tracking-tight px-2">
+                Diagnóstico de <span className="text-orange-500 block md:inline">necesidades de capacitación</span>
               </h1>
-              <p className="text-2xl font-black text-slate-800 uppercase tracking-tight">
-                Tu Aliado en Capacitación Cademmy
-              </p>
-            </div>
+                  <p className="text-xl md:text-2xl font-black text-slate-800 uppercase tracking-tight">
+                    Analiza brechas y estructura una solución estratégica personalizada
+                  </p>
+                </div>
+    
+                <div className="max-w-3xl mx-auto space-y-6 md:space-y-8">
+                  <div className="space-y-4">
+                    <p className="text-base md:text-lg text-slate-500 font-medium leading-relaxed px-4">
+                      Nuestro motor de arquitectura analizará tu contexto organizacional para generar una propuesta alineada a tus objetivos de desempeño.
+                    </p>
+                <div className="flex flex-wrap justify-center gap-4 text-[9px] md:text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                  <span className="flex items-center gap-1.5"><div className="w-1 h-1 rounded-full bg-orange-400" /> Sin costo inicial</span>
+                  <span className="flex items-center gap-1.5"><div className="w-1 h-1 rounded-full bg-orange-400" /> Sin instalación</span>
+                  <span className="flex items-center gap-1.5"><div className="w-1 h-1 rounded-full bg-orange-400" /> Acceso inmediato</span>
+                </div>
+              </div>
 
-            <div className="max-w-3xl mx-auto space-y-8">
-              <p className="text-lg text-slate-500 font-medium leading-relaxed">
-                "¡Bienvenido al Catálogo de Cursos Cademmy 2026! Estoy aquí para ayudarte a localizar la formación exacta que tu empresa necesita. Si no encuentras el tema específico en nuestra lista principal, no te preocupes: nuestro buscador especializado lo localizará en nuestro repositorio y te presentará la opción que tenemos del curso al instante."
-              </p>
-
-              <div className="bg-orange-50/50 border border-orange-100 rounded-[2rem] p-8 text-left shadow-sm">
+              <div className="bg-orange-50/50 border border-orange-100 rounded-[2rem] p-6 md:p-8 text-left shadow-sm mx-4">
                 <div className="flex items-start gap-4">
                   <div className="w-10 h-10 bg-orange-100 rounded-xl flex items-center justify-center shrink-0 mt-1">
-                    <Zap className="w-5 h-5 text-orange-600" />
+                    <Target className="w-5 h-5 text-orange-600" />
                   </div>
                   <div>
-                    <h4 className="text-xs font-black text-orange-800 uppercase tracking-widest mb-2">Nota importante:</h4>
-                    <p className="text-sm text-orange-900/70 font-medium leading-relaxed italic">
-                      Si deseas realizar ajustes a la propuesta presentada, puedes adelantarlos directamente en el sistema antes de nuestra cita. De esta manera, cuando te reúnas con uno de nuestros asesores ejecutivos, ya tendremos una base sólida sobre tus necesidades específicas para discutirlas a detalle.
+                    <h4 className="text-[10px] md:text-xs font-black text-orange-800 uppercase tracking-widest mb-2">PRECISIÓN ORGANIZACIONAL:</h4>
+                    <p className="text-xs md:text-sm text-orange-900/70 font-medium leading-relaxed italic">
+                      Las recomendaciones industriales consideran contexto operativo, dimensión organizacional y objetivos estratégicos de desempeño.
                     </p>
                   </div>
                 </div>
@@ -616,13 +795,13 @@ export const StepInput: React.FC<StepInputProps> = ({
             </div>
           </div>
         ) : (
-          <div className="animate-fade-in py-8">
-            <h2 className="text-4xl font-black text-slate-800 uppercase tracking-tight">
-              Detalles de la <span className="text-orange-500">Capacitación</span>
+          <div className="animate-fade-in py-4 md:py-8">
+            <h2 className="text-3xl md:text-4xl font-black text-slate-800 uppercase tracking-tight">
+              Validación de la <span className="text-orange-500">arquitectura de solución</span>
             </h2>
             <div className="h-1 w-20 bg-orange-500 mx-auto mt-6 rounded-full"></div>
-            <p className="text-slate-500 font-medium mt-6 text-lg">
-              Nombre del curso: <span className="text-slate-900 font-bold italic">"{topic}"</span>
+            <p className="text-slate-500 font-medium mt-6 text-base md:text-lg px-4">
+              Basados en tu diagnóstico organizacional, hemos estructurado la intervención más prospectiva para tu ecosistema empresarial.
             </p>
           </div>
         )}
@@ -637,45 +816,141 @@ export const StepInput: React.FC<StepInputProps> = ({
             handleSubmit(e);
           }
         }} 
-        className="bg-white p-8 md:p-12 rounded-[3rem] border border-slate-200 shadow-2xl shadow-slate-200/50 space-y-12"
+        className="bg-white p-6 sm:p-8 md:p-12 rounded-[2.5rem] md:rounded-[3rem] border border-slate-200 shadow-2xl shadow-slate-200/50 space-y-8 md:space-y-12"
       >
         
         {formStep === 1 ? (
+          <div className="space-y-10 animate-fade-in">
+            <div className="text-center space-y-4">
+              <div className="w-20 h-20 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                <Building2 className="w-10 h-10 text-orange-600" />
+              </div>
+              <h2 className="text-3xl font-black text-slate-900 uppercase tracking-tight">Contexto Organizacional</h2>
+              <p className="text-slate-500 font-medium max-w-xl mx-auto">
+                Para entregarte una arquitectura de capacitación precisa, necesitamos entender el entorno donde se aplicará.
+              </p>
+            </div>
+
+            <div className="space-y-8">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="space-y-3">
+                  <label className="block text-[11px] font-black text-slate-800 uppercase tracking-widest">Empresa o Cliente</label>
+                  <input
+                    type="text"
+                    required
+                    value={targetCompany}
+                    onChange={(e) => setTargetCompany(e.target.value)}
+                    placeholder="Eje: Banco Nacional / Empresa X"
+                    className="w-full px-8 py-5 rounded-2xl border-2 border-slate-100 bg-slate-50 focus:bg-white focus:border-orange-500 outline-none transition-all font-bold text-slate-700"
+                  />
+                </div>
+                <div className="space-y-3">
+                  <label className="block text-[11px] font-black text-slate-800 uppercase tracking-widest">Sector o Industria</label>
+                  <input
+                    type="text"
+                    required
+                    value={industry}
+                    onChange={(e) => setIndustry(e.target.value)}
+                    placeholder="Eje: Fintech / Retail / Salud"
+                    className="w-full px-8 py-5 rounded-2xl border-2 border-slate-100 bg-slate-50 focus:bg-white focus:border-orange-500 outline-none transition-all font-bold text-slate-700"
+                  />
+                </div>
+                <div className="space-y-3">
+                  <label className="block text-[11px] font-black text-slate-800 uppercase tracking-widest">Tamaño de la Organización</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {['1-50', '51-200', '201-500', '500+'].map((size) => (
+                      <button
+                        key={size}
+                        type="button"
+                        onClick={() => setCompanySize(size)}
+                        className={`py-4 rounded-xl text-[10px] font-black transition-all border-2 uppercase tracking-widest ${
+                          companySize === size 
+                            ? 'bg-orange-500 border-orange-600 text-white shadow-lg shadow-orange-100' 
+                            : 'bg-slate-50 border-slate-100 text-slate-400 hover:bg-slate-100'
+                        }`}
+                      >
+                        {size} Colaboradores
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="space-y-3">
+                  <label className="block text-[11px] font-black text-slate-800 uppercase tracking-widest">Tu Rol</label>
+                  <input
+                    type="text"
+                    required
+                    value={userRole}
+                    onChange={(e) => setUserRole(e.target.value)}
+                    placeholder="Eje: Gerente RH / Director de Área"
+                    className="w-full px-8 py-5 rounded-2xl border-2 border-slate-100 bg-slate-50 focus:bg-white focus:border-orange-500 outline-none transition-all font-bold text-slate-700"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              disabled={!isContextValid}
+              onClick={() => setFormStep(1.1)}
+              className="w-full py-6 bg-slate-900 hover:bg-black text-white font-black text-xl rounded-2xl shadow-xl transition-all flex items-center justify-center gap-3 disabled:opacity-30 group"
+            >
+              CONTINUAR AL DIAGNÓSTICO
+              <ArrowRight className="w-6 h-6 group-hover:translate-x-1 transition-transform" />
+            </button>
+          </div>
+        ) : formStep === 1.1 ? (
           <div className="space-y-8 animate-fade-in">
+            <div className="text-center space-y-4 mb-8">
+              <div className="w-20 h-20 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                <Target className="w-10 h-10 text-orange-600" />
+              </div>
+              <h2 className="text-3xl font-black text-slate-900 uppercase tracking-tight">Diagnóstico de Desafío Estratégico</h2>
+              <p className="text-slate-500 font-medium max-w-xl mx-auto">
+                Define el desafío central o la brecha de desempeño que has identificado en tu equipo.
+              </p>
+            </div>
+
             <div className="space-y-3">
                 <div className="flex items-center flex-wrap gap-y-1">
                     <label className="flex items-center gap-2 text-[11px] font-black text-slate-800 uppercase tracking-[0.15em]">
-                        <GraduationCap className="w-4 h-4 text-orange-500" /> NOMBRE DEL CURSO:
+                        <GraduationCap className="w-4 h-4 text-orange-500" /> DESAFÍO ORGANIZACIONAL A RESOLVER:
                     </label>
                     {mandatoryBadge}
                     {renderHelpTrigger('topic')}
                 </div>
-                {renderHelpText('topic', 'Escribe el nombre del curso que deseas buscar o diseñar.')}
+                {renderHelpText('topic', 'Escribe el nombre de la solución o eje estratégico que deseas buscar o diseñar.')}
                 <input
                     type="text"
                     required
                     value={topic}
                     onChange={(e) => setTopic(e.target.value)}
-                    placeholder="Ej: Liderazgo Híbrido..."
+                    placeholder="Eje: Bajo desempeño de mandos medios / Alta rotación en supervisores / Falta de liderazgo híbrido"
+                    className="w-full px-8 py-6 bg-slate-50 border-2 border-slate-100 rounded-3xl outline-none focus:ring-4 focus:ring-orange-500/20 focus:border-orange-500 transition-all font-bold text-slate-800 text-lg md:text-xl placeholder:text-slate-300 shadow-inner"
                     />
-            </div>
-            <div className="grid grid-cols-1 gap-4">
-              <button
-                type="submit"
-                disabled={!topic.trim() || isSearchingCatalog || isLoadingSuggestions}
-                className="w-full py-8 bg-slate-900 border-2 border-slate-900 text-white hover:bg-black font-black text-2xl rounded-2xl shadow-xl transition-all flex items-center justify-center gap-4 disabled:opacity-30 disabled:cursor-not-allowed group hover:scale-[1.01]"
-              >
-                {(isSearchingCatalog || isLoadingSuggestions) ? loadingMessage : 'BUSCAR CURSO'}
-                <Search className="w-7 h-7 text-orange-500 group-hover:scale-110 transition-transform" />
-              </button>
-              
-              <div className="flex items-center gap-4 py-2">
-                <div className="flex-1 h-px bg-slate-100"></div>
-                <p className="text-[10px] font-black text-slate-300 uppercase tracking-[0.2em] whitespace-nowrap">
-                  Un solo motor de búsqueda para Catálogo y Repositorio Especializado
+                <p className="text-[10px] font-bold text-slate-400 mt-2 ml-1 italic">
+                  El sistema priorizará soluciones considerando impacto operativo, liderazgo, productividad y desempeño.
                 </p>
-                <div className="flex-1 h-px bg-slate-100"></div>
-              </div>
+                <p className="text-[10px] font-bold text-orange-500 mt-2 ml-1 italic">
+                  👉 Entre más específico sea el desafío, más precisa y accionable será la arquitectura de capacitación.
+                </p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <button
+                type="button"
+                onClick={() => setFormStep(1)}
+                className="py-6 bg-white border-2 border-slate-100 text-slate-400 font-black text-xl rounded-2xl hover:bg-slate-50 transition-all flex items-center justify-center gap-3"
+              >
+                <ArrowRight className="w-5 h-5 rotate-180" />
+                MODIFICAR CONTEXTO
+              </button>
+              <button
+                onClick={(e) => handleUnifiedSearch(e)}
+                disabled={!topic.trim() || isSearchingCatalog}
+                className="py-6 bg-slate-900 border-2 border-slate-900 text-white hover:bg-black font-black text-xl rounded-2xl shadow-xl transition-all flex items-center justify-center gap-3 disabled:opacity-30 group"
+              >
+                {isSearchingCatalog ? 'CONSULTANDO...' : 'GENERAR ARQUITECTURA'}
+                <Sparkles className="w-6 h-6 text-orange-500 group-hover:rotate-12 transition-transform" />
+              </button>
             </div>
           </div>
         ) : formStep === 1.9 ? (
@@ -684,7 +959,7 @@ export const StepInput: React.FC<StepInputProps> = ({
               <div className="w-20 h-20 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-6">
                 <FileText className="w-10 h-10 text-orange-600" />
               </div>
-              <h2 className="text-3xl font-black text-slate-900 uppercase tracking-tight">Confirma los Temas del Curso</h2>
+              <h2 className="text-3xl font-black text-slate-900 uppercase tracking-tight">Confirma los Ejes Estratégicos</h2>
               <p className="text-slate-500 font-medium max-w-xl mx-auto">
                 Hemos estructurado esta propuesta inicial de temas basándonos en tus necesidades. Puedes agregar, quitar o modificar cualquier tema antes de generar la propuesta completa.
               </p>
@@ -804,8 +1079,11 @@ export const StepInput: React.FC<StepInputProps> = ({
         ) : formStep === 1.5 ? (
           <div className="space-y-10 animate-fade-in text-center">
             <div className="space-y-4">
-              <h3 className="text-sm font-black text-slate-400 uppercase tracking-[0.3em]">Confirma el enfoque del curso</h3>
-              <p className="text-slate-500 font-medium">Hemos analizado tu solicitud. ¿Cuál de estos títulos se ajusta mejor a lo que buscas?</p>
+              <h3 className="text-sm font-black text-slate-900 uppercase tracking-[0.2em] leading-tight">Selecciona la línea de solución que mejor se alinea con tu necesidad</h3>
+              <p className="text-slate-500 font-medium">Estas opciones representan diferentes enfoques para resolver el problema identificado. Selecciona el que mejor se ajusta a tu contexto.</p>
+              <p className="text-[10px] font-bold text-orange-500 italic mt-2">
+                👉 Este paso nos permite afinar la propuesta antes de presentarte una solución completa.
+              </p>
             </div>
 
             <div className="grid grid-cols-1 gap-4">
@@ -818,7 +1096,7 @@ export const StepInput: React.FC<StepInputProps> = ({
                 className="p-8 bg-orange-50 border-2 border-orange-200 text-orange-900 rounded-[2rem] hover:border-orange-500 hover:bg-white transition-all text-left group relative overflow-hidden"
               >
                 <div className="relative z-10">
-                  <span className="text-[10px] font-black text-orange-400 uppercase tracking-widest block mb-2">Tu búsqueda original</span>
+                  <span className="text-[10px] font-black text-orange-400 uppercase tracking-widest block mb-2">Necesidad identificada en tu organización</span>
                   <span className="text-2xl font-black block">{topic}</span>
                 </div>
                 <div className="absolute right-8 top-1/2 -translate-y-1/2 opacity-20 group-hover:opacity-100 transition-opacity">
@@ -852,13 +1130,13 @@ export const StepInput: React.FC<StepInputProps> = ({
               <button
                 type="button"
                 onClick={() => setFormStep(2)}
-                className="p-8 bg-slate-50 border-2 border-dashed border-slate-200 text-slate-500 rounded-[2rem] hover:border-orange-500 hover:bg-white hover:text-orange-600 transition-all text-left group flex items-center justify-between mt-4"
+                className="p-8 bg-orange-50/30 border-2 border-dashed border-orange-200 text-orange-900 rounded-[2rem] hover:border-orange-500 hover:bg-white hover:text-orange-600 transition-all text-left group flex items-center justify-between mt-4"
               >
                 <div className="space-y-1">
-                  <span className="text-lg font-black block">¿Ninguno de estos?</span>
-                  <span className="text-[10px] font-black uppercase tracking-widest opacity-70">Definir parámetros manualmente (Sector, Título, etc.)</span>
+                  <span className="text-lg font-black block">¿Quieres validar un enfoque más específico?</span>
+                  <span className="text-[10px] font-black uppercase tracking-widest opacity-70">Diseñar propuesta a medida para validación estratégica</span>
                 </div>
-                <ArrowRight className="w-6 h-6 text-slate-200 group-hover:text-orange-500 group-hover:translate-x-2 transition-all" />
+                <Sparkles className="w-6 h-6 text-orange-300 group-hover:text-orange-500 transition-all" />
               </button>
             </div>
 
@@ -875,7 +1153,7 @@ export const StepInput: React.FC<StepInputProps> = ({
           <div className="space-y-10 animate-fade-in text-center">
             <div className="space-y-4">
               <h3 className="text-sm font-black text-slate-400 uppercase tracking-[0.3em]">Selecciona el nivel de profundidad</h3>
-              <p className="text-slate-500 font-medium">¿Para qué nivel de experiencia debemos diseñar el curso de <span className="text-slate-900 font-bold">"{topic}"</span>?</p>
+              <p className="text-slate-500 font-medium">¿Para qué nivel de experiencia debemos diseñar la arquitectura de <span className="text-slate-900 font-bold">"{topic}"</span>?</p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -921,10 +1199,14 @@ export const StepInput: React.FC<StepInputProps> = ({
           <div className="space-y-10 animate-fade-in">
             <div className="text-center space-y-4">
               <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-orange-50 text-orange-600 rounded-full text-[10px] font-black uppercase tracking-widest border border-orange-100 mb-4">
-                <Sparkles className="w-3 h-3" /> Propuesta de Diseño Inicial
+                <ShieldCheck className="w-3 h-3" /> Propuesta Estratégica
               </div>
-              <h3 className="text-4xl font-black text-slate-900 tracking-tight leading-none">{proposalData.topic}</h3>
-              <p className="text-slate-500 font-medium">Nivel {proposalData.level} • Diseño sugerido por Mentor Virtual</p>
+              <h3 className="text-4xl font-black text-slate-900 tracking-tight leading-none">Propuesta de capacitación para tu organización</h3>
+              <p className="text-slate-500 font-medium">Con base en tu necesidad, identificamos la siguiente solución para mejorar el desempeño en tu organización:</p>
+              <div className="py-10 px-12 bg-white border-2 border-slate-100 rounded-[3rem] inline-block mt-4 transition-all hover:border-orange-500 group shadow-2xl shadow-slate-100 max-w-4xl mx-auto">
+                 <span className="text-[10px] md:text-xs font-black text-orange-500 uppercase tracking-widest block mb-4 opacity-70">Título Recomendado para tu organización</span>
+                 <span className="text-3xl md:text-5xl font-black text-slate-800 tracking-tight leading-tight block">{proposalData.topic}</span>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -963,9 +1245,9 @@ export const StepInput: React.FC<StepInputProps> = ({
             </div>
 
             <div className="bg-slate-900 p-10 rounded-[3rem] text-white space-y-6">
-              <h4 className="text-sm font-black uppercase tracking-[0.3em] text-orange-400">Características del Curso</h4>
+              <h4 className="text-sm font-black uppercase tracking-[0.3em] text-orange-400">Atributos de la Solución</h4>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {proposalData.characteristics.map((char: string, i: number) => (
+                {(proposalData?.characteristics || []).map((char: string, i: number) => (
                   <div key={i} className="flex items-center gap-3">
                     <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
                     <span className="text-sm font-bold text-slate-200">{char}</span>
@@ -980,16 +1262,16 @@ export const StepInput: React.FC<StepInputProps> = ({
                 onClick={handleFinalizeProposal}
                 className="py-6 bg-orange-500 hover:bg-orange-600 text-white font-black text-xl rounded-2xl transition-all flex items-center justify-center gap-3 shadow-xl shadow-orange-200 px-8"
               >
-                MOSTRAR FORMULARIO PARA PRESENTAR UNA PROPUESTA PRELIMINAR
+                Personalizar solución
                 <ArrowRight className="w-6 h-6" />
               </button>
               <a
-                href="https://calendar.app.google/z6m5yZ6m5yZ6m5yZ6"
+                href={BOOKING_URL}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="py-6 bg-white border-2 border-slate-200 text-slate-700 hover:border-orange-500 font-black text-xl rounded-2xl transition-all flex items-center justify-center gap-3"
               >
-                AGENDAR UNA CITA
+                Hablar con un consultor estratégico
                 <Calendar className="w-6 h-6 text-orange-500" />
               </a>
             </div>
@@ -1019,7 +1301,7 @@ export const StepInput: React.FC<StepInputProps> = ({
                 <div className="space-y-3">
                     <div className="flex items-center flex-wrap gap-y-1">
                         <label className="flex items-center gap-2 text-[11px] font-black text-slate-800 uppercase tracking-[0.15em]">
-                            <BookOpen className="w-4 h-4 text-orange-500" /> TEMA O NOMBRE DEL CURSO
+                            <BookOpen className="w-4 h-4 text-orange-500" /> TEMA O EJE ESTRATÉGICO
                         </label>
                         {mandatoryBadge}
                     </div>
@@ -1033,29 +1315,50 @@ export const StepInput: React.FC<StepInputProps> = ({
                     />
                 </div>
 
-                <div className="space-y-3">
-                    <div className="flex items-center flex-wrap gap-y-1">
-                        <label className="flex items-center gap-2 text-[11px] font-black text-slate-800 uppercase tracking-[0.15em]">
-                            <Building2 className="w-4 h-4 text-orange-500" /> 1. EMPRESA O INDUSTRIA
-                        </label>
-                        {mandatoryBadge}
-                        {renderHelpTrigger('company')}
-                    </div>
-                    {renderHelpText('company', 'Indica el nombre de tu empresa o el sector industrial.')}
-                    <input
-                        type="text"
-                        required
-                        value={targetCompany}
-                        onChange={(e) => setTargetCompany(e.target.value)}
-                        placeholder="Ej: Sector Bancario / No sé..."
-                        className="w-full px-8 py-5 rounded-2xl border-2 border-slate-100 bg-slate-50 focus:bg-white focus:border-orange-500 outline-none transition-all font-bold text-slate-700 placeholder:text-slate-300 shadow-sm"
-                    />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  <div className="space-y-3">
+                      <div className="flex items-center flex-wrap gap-y-1">
+                          <label className="flex items-center gap-2 text-[11px] font-black text-slate-800 uppercase tracking-[0.15em]">
+                              <Building2 className="w-4 h-4 text-orange-500" /> 1. EMPRESA O CLIENTE
+                          </label>
+                          {mandatoryBadge}
+                          {renderHelpTrigger('company')}
+                      </div>
+                      {renderHelpText('company', 'Indica el nombre de tu empresa.')}
+                      <input
+                          type="text"
+                          required
+                          value={targetCompany}
+                          onChange={(e) => setTargetCompany(e.target.value)}
+                          placeholder="Ej: Banco Nacional / Empresa X"
+                          className="w-full px-8 py-5 rounded-2xl border-2 border-slate-100 bg-slate-50 focus:bg-white focus:border-orange-500 outline-none transition-all font-bold text-slate-700 placeholder:text-slate-300 shadow-sm"
+                      />
+                  </div>
+
+                  <div className="space-y-3">
+                      <div className="flex items-center flex-wrap gap-y-1">
+                          <label className="flex items-center gap-2 text-[11px] font-black text-slate-800 uppercase tracking-[0.15em]">
+                              <Target className="w-4 h-4 text-orange-500" /> 2. SECTOR O INDUSTRIA
+                          </label>
+                          {mandatoryBadge}
+                          {renderHelpTrigger('industry')}
+                      </div>
+                      {renderHelpText('industry', 'Indica el sector industrial o giro de negocio.')}
+                      <input
+                          type="text"
+                          required
+                          value={industry}
+                          onChange={(e) => setIndustry(e.target.value)}
+                          placeholder="Ej: Fintech / Retail / Salud"
+                          className="w-full px-8 py-5 rounded-2xl border-2 border-slate-100 bg-slate-50 focus:bg-white focus:border-orange-500 outline-none transition-all font-bold text-slate-700 placeholder:text-slate-300 shadow-sm"
+                      />
+                  </div>
                 </div>
 
                 <div className="space-y-3">
                     <div className="flex items-center flex-wrap gap-y-1">
                         <label className="flex items-center gap-2 text-[11px] font-black text-slate-800 uppercase tracking-[0.15em]">
-                            <MessageSquare className="w-4 h-4 text-orange-500" /> 2. FOCO ESPECIAL / PETICIÓN
+                            <MessageSquare className="w-4 h-4 text-orange-500" /> 3. FOCO ESPECIAL / PETICIÓN
                         </label>
                         {mandatoryBadge}
                         {renderHelpTrigger('focus')}
@@ -1086,12 +1389,12 @@ export const StepInput: React.FC<StepInputProps> = ({
                 <div className="space-y-3">
                     <div className="flex items-center flex-wrap gap-y-1">
                         <label className="flex items-center gap-2 text-[11px] font-black text-slate-800 uppercase tracking-[0.15em]">
-                            <FileText className="w-4 h-4 text-orange-500" /> TÍTULO PERSONALIZADO (OPCIONAL)
+                            <FileText className="w-4 h-4 text-orange-500" /> 4. TÍTULO PERSONALIZADO (OPCIONAL)
                         </label>
                         {optionalBadge}
                         {renderHelpTrigger('customTitle')}
                     </div>
-                    {renderHelpText('customTitle', 'Si ya tienes un nombre definitivo para el curso, escríbelo aquí.')}
+                    {renderHelpText('customTitle', 'Si ya tienes un nombre definitivo para la solución, escríbelo aquí.')}
                     <input
                         type="text"
                         value={customTitle}
@@ -1104,12 +1407,12 @@ export const StepInput: React.FC<StepInputProps> = ({
                 <div className="space-y-3">
                     <div className="flex items-center flex-wrap gap-y-1">
                         <label className="flex items-center gap-2 text-[11px] font-black text-slate-800 uppercase tracking-[0.15em]">
-                            <Users className="w-4 h-4 text-orange-500" /> 4. PÚBLICO OBJETIVO
+                            <Users className="w-4 h-4 text-orange-500" /> 5. PÚBLICO OBJETIVO
                         </label>
                         {mandatoryBadge}
                         {renderHelpTrigger('audience')}
                     </div>
-                    {renderHelpText('audience', 'Define quién tomará el curso.')}
+                    {renderHelpText('audience', 'Define el perfil de impacto organizacional.')}
                     <input
                         type="text"
                         required
@@ -1124,7 +1427,7 @@ export const StepInput: React.FC<StepInputProps> = ({
             <div className="space-y-3">
                 <div className="flex items-center flex-wrap gap-y-1">
                     <label className="flex items-center gap-2 text-[11px] font-black text-slate-800 uppercase tracking-[0.15em]">
-                        <Target className="w-4 h-4 text-orange-500" /> 5. ¿QUÉ QUIERES LOGRAR CON EL CURSO?
+                        <Target className="w-4 h-4 text-orange-500" /> 6. ¿QUÉ QUIERES LOGRAR CON ESTA SOLUCIÓN?
                     </label>
                     {mandatoryBadge}
                     {renderHelpTrigger('outcome')}
@@ -1143,23 +1446,23 @@ export const StepInput: React.FC<StepInputProps> = ({
             <div className="space-y-4">
                <div className="flex items-center flex-wrap gap-y-1">
                  <label className="flex items-center gap-2 text-[11px] font-black text-slate-800 uppercase tracking-[0.15em]">
-                   <Zap className="w-4 h-4 text-orange-500" /> 6. NIVEL DE PROFUNDIDAD
+                   <Zap className="w-4 h-4 text-orange-500" /> 7. NIVEL DE PROFUNDIDAD
                  </label>
                 {mandatoryBadge}
                 {renderHelpTrigger('depth')}
               </div>
               {renderHelpText('depth', "Selecciona el rigor técnico.")}
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 md:gap-4">
                 {(['Básico', 'Intermedio', 'Avanzado'] as const).map((level) => (
                   <button
                     key={level}
                     type="button"
                     onClick={() => setDepth(level)}
-                    className={`py-5 rounded-2xl border-2 text-[11px] font-black transition-all uppercase tracking-widest ${
+                    className={`py-4 md:py-5 rounded-2xl border-2 text-[10px] md:text-[11px] font-black transition-all uppercase tracking-widest ${
                       depth === level 
                       ? 'border-orange-500 bg-orange-50 text-orange-700 shadow-sm' 
                       : 'border-slate-50 bg-slate-50 text-slate-400 hover:border-slate-200'
-                    }`}
+                    } ${level === 'Avanzado' ? 'col-span-2 sm:col-span-1' : ''}`}
                   >
                     {level}
                   </button>
@@ -1167,24 +1470,40 @@ export const StepInput: React.FC<StepInputProps> = ({
               </div>
             </div>
 
-            {/* CAMPO 6: HORAS DEL CURSO */}
-            <div className="space-y-3">
+            {/* CAMPO 8: HORAS DEL CURSO */}
+            <div className="space-y-4">
                 <div className="flex items-center flex-wrap gap-y-1">
                     <label className="flex items-center gap-2 text-[11px] font-black text-slate-800 uppercase tracking-[0.15em]">
-                        <Clock className="w-4 h-4 text-orange-500" /> 6. PREFERENCIA DE HORAS / DURACIÓN
+                        <Clock className="w-4 h-4 text-orange-500" /> 8. PREFERENCIA DE HORAS / DURACIÓN
                     </label>
                     {mandatoryBadge}
                     {renderHelpTrigger('hours')}
                 </div>
                 {renderHelpText('hours', 'El número de horas es PROPORCIONAL a la profundidad.')}
-                <input
-                    type="text"
-                    required
-                    value={preferredDuration}
-                    onChange={(e) => setPreferredDuration(e.target.value)}
-                    placeholder="Ej: 20 horas / Recomiéndame..."
-                    className="w-full px-8 py-5 rounded-2xl border-2 border-slate-100 bg-slate-50 focus:bg-white focus:border-orange-500 outline-none transition-all font-bold text-slate-700 shadow-sm"
-                />
+                
+                <div className="flex flex-col sm:flex-row gap-4">
+                    <input
+                        type="text"
+                        required
+                        value={preferredDuration}
+                        onChange={(e) => setPreferredDuration(e.target.value)}
+                        placeholder="Ej: 20 horas / 3 días"
+                        className="flex-1 px-6 md:px-8 py-4 md:py-5 rounded-2xl border-2 border-slate-100 bg-slate-50 focus:bg-white focus:border-orange-500 outline-none transition-all font-bold text-slate-700 shadow-sm"
+                    />
+                    <button
+                        type="button"
+                        onClick={() => setPreferredDuration('Recomiéndame')}
+                        className={`px-6 md:px-8 py-4 md:py-5 rounded-2xl border-2 font-black text-[10px] md:text-xs uppercase tracking-widest transition-all flex items-center justify-center gap-2 whitespace-nowrap min-h-[56px] ${
+                            preferredDuration === 'Recomiéndame'
+                            ? 'bg-orange-500 border-orange-500 text-white shadow-lg shadow-orange-100'
+                            : 'bg-white border-slate-200 text-slate-600 hover:border-orange-500 hover:text-orange-600'
+                        }`}
+                    >
+                        <Sparkles className={`w-4 h-4 ${preferredDuration === 'Recomiéndame' ? 'text-white' : 'text-orange-500'}`} />
+                        <span className="sm:hidden lg:inline">RECOMIÉNDAME</span>
+                        <span className="hidden sm:inline lg:hidden">REC.</span>
+                    </button>
+                </div>
             </div>
 
             {/* CAMPO 7: INSUMO BASE */}
@@ -1192,7 +1511,7 @@ export const StepInput: React.FC<StepInputProps> = ({
               <div className="flex items-center justify-between">
                 <div className="flex items-center flex-wrap gap-y-1">
                     <label className="flex items-center gap-2 text-[11px] font-black text-slate-400 uppercase tracking-[0.15em]">
-                        <FileUp className="w-4 h-4 text-orange-500" /> 7. CARGAR DOCUMENTO PARA ANÁLISIS
+                        <FileUp className="w-4 h-4 text-orange-500" /> 9. CARGAR DOCUMENTO PARA ANÁLISIS
                     </label>
                     {optionalBadge}
                     {renderHelpTrigger('file')}
@@ -1209,7 +1528,7 @@ export const StepInput: React.FC<StepInputProps> = ({
                     <Upload className="w-10 h-10 text-orange-500" />
                   </div>
                   <div className="text-center">
-                    <p className="text-xl font-black text-slate-800 uppercase tracking-tight">Sube Insumos o Cursos a Actualizar</p>
+                    <p className="text-xl font-black text-slate-800 uppercase tracking-tight">Sube Insumos o Programas a Diagnosticar</p>
                     <p className="text-xs font-bold text-slate-400 mt-2 italic px-8">Analizaremos el contenido para proponer mejoras y personalización total</p>
                   </div>
                   <input 
@@ -1253,10 +1572,10 @@ export const StepInput: React.FC<StepInputProps> = ({
               <button
                 type="submit"
                 disabled={isLoading || isGeneratingThemes}
-                className="w-full py-7 bg-slate-900 hover:bg-black text-white font-black text-2xl rounded-2xl shadow-2xl shadow-slate-200 transition-all flex items-center justify-center gap-4 disabled:opacity-30 disabled:cursor-not-allowed group hover:scale-[1.01]"
+                className="w-full py-6 md:py-7 bg-slate-900 hover:bg-black text-white font-black text-lg md:text-2xl rounded-2xl shadow-2xl shadow-slate-200 transition-all flex flex-col md:flex-row items-center justify-center gap-2 md:gap-4 disabled:opacity-30 disabled:cursor-not-allowed group hover:scale-[1.01]"
               >
-                {(isLoading || isGeneratingThemes) ? loadingMessage : 'GENERAR PROPUESTA PRELIMINAR'}
-                <Sparkles className="w-7 h-7 text-orange-400 group-hover:rotate-12 transition-transform" />
+                <span className="text-center">{(isLoading || isGeneratingThemes) ? 'DIAGNOSTICANDO...' : 'CONSTRUIR ARQUITECTURA DE SOLUCIÓN'}</span>
+                <Sparkles className="w-6 md:w-7 h-6 md:h-7 text-orange-400 group-hover:rotate-12 transition-transform" />
               </button>
               {!isFormValid && !isLoading && (
                 <p className="text-center mt-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest animate-pulse">

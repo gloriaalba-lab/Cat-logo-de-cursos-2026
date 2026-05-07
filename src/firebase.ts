@@ -7,17 +7,24 @@ import {
   signOut, 
   createUserWithEmailAndPassword, 
   signInWithEmailAndPassword, 
-  sendEmailVerification 
+  sendEmailVerification,
+  setPersistence,
+  browserLocalPersistence
 } from 'firebase/auth';
 import { initializeFirestore, collection, addDoc, serverTimestamp, query, where, onSnapshot, orderBy, deleteDoc, doc, getDoc, getDocFromServer } from 'firebase/firestore';
-import firebaseConfig from './firebase-applet-config.json';
+import firebaseConfig from '../firebase-applet-config.json';
 
 // Initialize Firebase SDK
 const app = initializeApp(firebaseConfig);
+
+// Use the database ID from config if present
 export const db = initializeFirestore(app, {
   experimentalForceLongPolling: true,
-});
+}, firebaseConfig.firestoreDatabaseId || '(default)');
 export const auth = getAuth(app);
+
+// Enable persistence
+setPersistence(auth, browserLocalPersistence).catch(console.error);
 
 // Admin check logic
 export const checkIsAdmin = async (email: string | null): Promise<boolean> => {
@@ -27,7 +34,7 @@ export const checkIsAdmin = async (email: string | null): Promise<boolean> => {
   console.log("Checking admin status for:", normalizedEmail);
   
   // Bootstrap admins
-  if (normalizedEmail === "gloria@cademmy.com" || normalizedEmail === "gloriaalbamx@google.com") {
+  if (normalizedEmail === "gloria@cademmy.com" || normalizedEmail === "gloriaalbamx@gmail.com") {
     console.log("Admin status: TRUE (Bootstrap)");
     return true;
   }

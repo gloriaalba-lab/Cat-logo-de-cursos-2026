@@ -7,19 +7,21 @@ import {
   CheckCircle2, BookOpen, Clock, Users, Target, Layers, Play, Info, Award, 
   Home, Image as ImageIcon, Book, BrainCircuit, ListChecks, HelpCircle, 
   Lightbulb, ChevronRight, AlertCircle, FileText, Mail, Send, Sparkles, ArrowRight,
-  Cloud
+  Cloud, Calendar
 } from 'lucide-react';
 import { CloudConnect } from './CloudConnect';
+import { BOOKING_URL } from '../constants';
 
 interface StepCourseProps {
   course: Course;
   onBackToVariations: () => void;
   onRestart: () => void;
+  onHome?: () => void;
 }
 
 type TabType = 'LECTURA' | 'ACTIVIDADES' | 'CASOS' | 'PROPUESTA';
 
-export const StepCourse: React.FC<StepCourseProps> = ({ course, onBackToVariations, onRestart }) => {
+export const StepCourse: React.FC<StepCourseProps> = ({ course, onBackToVariations, onRestart, onHome }) => {
   const [activeModuleIndex, setActiveModuleIndex] = useState(-1);
   const [activeTab, setActiveTab] = useState<TabType>('LECTURA');
   const [email, setEmail] = useState('');
@@ -64,7 +66,7 @@ export const StepCourse: React.FC<StepCourseProps> = ({ course, onBackToVariatio
       });
       const data = await res.json();
       if (data.success) {
-        alert(`¡Éxito! El curso "${course.title}" se ha guardado en tu ${provider === 'google' ? 'Google Drive' : 'OneDrive'}.`);
+        alert(`¡Éxito! El programa "${course.title}" se ha guardado en tu ${provider === 'google' ? 'Google Drive' : 'OneDrive'}.`);
       }
     } catch (e) {
       alert("Error al guardar en la nube");
@@ -76,7 +78,7 @@ export const StepCourse: React.FC<StepCourseProps> = ({ course, onBackToVariatio
       <section>
         <div className="flex items-center gap-3 mb-6">
           <div className="p-2 bg-orange-100 rounded-lg text-orange-600"><ListChecks className="w-6 h-6" /></div>
-          <h3 className="text-2xl font-black text-slate-800 uppercase tracking-tight">Actividad: Relacionar Columnas</h3>
+          <h3 className="text-2xl font-black text-slate-800 uppercase tracking-tight">Actividad: Validación Organizacional</h3>
         </div>
         <div className="bg-white border border-slate-200 rounded-[2rem] overflow-hidden">
           <div className="grid grid-cols-1 md:grid-cols-2">
@@ -175,7 +177,7 @@ export const StepCourse: React.FC<StepCourseProps> = ({ course, onBackToVariatio
             </div>
             <details className="group">
               <summary className="list-none flex items-center justify-center gap-2 py-4 bg-slate-50 rounded-xl text-xs font-black text-slate-400 cursor-pointer uppercase tracking-widest hover:bg-slate-100 transition-all">
-                Ver Análisis del Consultor <ChevronRight className="w-4 h-4 group-open:rotate-90 transition-transform" />
+                Ver Diagnóstico del Consultor <ChevronRight className="w-4 h-4 group-open:rotate-90 transition-transform" />
               </summary>
               <div className="mt-6 p-8 bg-orange-50 rounded-3xl border border-orange-100 animate-scale-in">
                 <p className="text-lg font-black text-orange-900 mb-3">{c.options[c.correctAnswer]}</p>
@@ -257,10 +259,10 @@ export const StepCourse: React.FC<StepCourseProps> = ({ course, onBackToVariatio
   );
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-6 h-auto md:h-[calc(100vh-5rem)] flex flex-col md:flex-row gap-6 animate-fade-in no-print font-['Montserrat']">
+    <div className="max-w-7xl mx-auto px-4 py-6 h-auto lg:h-[calc(100vh-5rem)] flex flex-col lg:flex-row gap-6 animate-fade-in no-print font-['Montserrat']">
       
-      <div className="w-full md:w-1/4 flex-shrink-0 flex flex-col h-full overflow-hidden">
-        <div className="flex flex-col bg-white rounded-[2rem] shadow-sm border border-slate-200 h-full overflow-hidden">
+      <div className="w-full lg:w-1/4 flex-shrink-0 flex flex-col h-auto lg:h-full overflow-hidden">
+        <div className="flex flex-col bg-white rounded-[2rem] shadow-sm border border-slate-200 h-auto lg:h-full overflow-hidden">
             <div className="p-6 border-b border-slate-100">
                 <button 
                   onClick={onBackToVariations}
@@ -362,13 +364,13 @@ export const StepCourse: React.FC<StepCourseProps> = ({ course, onBackToVariatio
                     <div className="max-w-4xl mx-auto space-y-12 pb-20 animate-fade-in">
                         <div className="text-center">
                             <button 
-                                onClick={onRestart}
+                                onClick={onHome || onRestart}
                                 className="hover:opacity-80 transition-opacity cursor-pointer"
                                 title="Ir al inicio"
                             >
                                 <Logo className="mb-12" size={120} vertical />
                             </button>
-                            <span className="text-[10px] font-black text-orange-600 uppercase tracking-[0.3em] mb-4 block">Catálogo de cursos 2026</span>
+                            <span className="text-[10px] font-black text-orange-600 uppercase tracking-[0.3em] mb-4 block">Diagnóstico Estratégico 2026</span>
                             <h1 className="text-5xl font-black text-slate-900 mb-8 leading-tight tracking-tighter">{course.title}</h1>
                         </div>
 
@@ -419,7 +421,7 @@ export const StepCourse: React.FC<StepCourseProps> = ({ course, onBackToVariatio
                                 <ArrowRight className="w-6 h-6 rotate-180 text-orange-500" /> REGRESAR Y EDITAR
                             </button>
                             <button onClick={() => { setActiveModuleIndex(0); setActiveTab('LECTURA'); }} className="px-12 py-5 bg-orange-600 text-white text-xl font-black rounded-3xl shadow-2xl shadow-orange-100 hover:scale-105 transition-all flex items-center justify-center gap-4">
-                                REVISAR TEMARIO <Play className="w-6 h-6 fill-current" />
+                                EXPLORAR ARQUITECTURA TÉCNICA <Play className="w-6 h-6 fill-current" />
                             </button>
                             <button onClick={() => setActiveTab('PROPUESTA')} className="px-12 py-5 bg-slate-900 text-white text-xl font-black rounded-3xl shadow-2xl shadow-slate-100 hover:scale-105 transition-all flex items-center justify-center gap-4 text-center">
                                 <div>

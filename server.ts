@@ -261,8 +261,11 @@ async function startServer() {
       console.log("Vite middleware initialized");
       
       // Manual fallback for SPA in dev
-      app.use("*all", async (req, res, next) => {
+      app.get("*all", async (req, res, next) => {
         const url = req.originalUrl;
+        if (url.startsWith('/api') || url.startsWith('/auth')) return next();
+        
+        console.log(`Dev fallback for: ${url}`);
         try {
           let template = fs.readFileSync(path.resolve(process.cwd(), "index.html"), "utf-8");
           template = await vite.transformIndexHtml(url, template);
@@ -280,6 +283,7 @@ async function startServer() {
     console.log("Serving static files from:", distPath);
     app.use(express.static(distPath));
     app.get("*all", (req, res) => {
+      console.log(`Prod fallback for: ${req.url}`);
       res.sendFile(path.join(distPath, "index.html"));
     });
   }

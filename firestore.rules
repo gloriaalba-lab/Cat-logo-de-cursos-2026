@@ -37,7 +37,7 @@ service cloud.firestore {
       return isAuthenticated() && (
         exists(/databases/$(database)/documents/admin_emails/$(request.auth.token.email)) ||
         request.auth.token.email == "gloria@cademmy.com" ||
-        request.auth.token.email == "gloriaalbamx@google.com"
+        request.auth.token.email == "gloriaalbamx@gmail.com"
       );
     }
     
@@ -87,6 +87,15 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read, write: if isOwner(userId) || isAllowedByTime();
+    }
+
+    match /app_metrics/{metricId} {
+      allow create: if true;
+      allow read: if isAdmin() || isAllowedByTime();
+    }
+
+    match /test/connection {
+      allow get: if true;
     }
   }
 }

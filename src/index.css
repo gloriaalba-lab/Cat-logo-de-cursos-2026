@@ -162,3 +162,22 @@ body {
 .border-slate-200 { border-color: #e2e8f0 !important; }
 .border-orange-500 { border-color: #f97316 !important; }
 .border-orange-100 { border-color: #ffedd5 !important; }
+
+input[type="text"], 
+input[type="email"], 
+input[type="password"], 
+input[type="number"], 
+input[type="tel"], 
+textarea, 
+select {
+  @apply w-full px-6 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl outline-none focus:border-orange-500 focus:bg-white transition-all text-sm md:text-base font-medium text-slate-700 placeholder:text-slate-300;
+  font-size: 16px; /* Prevents iOS zoom */
+}
+
+input:focus, textarea:focus {
+  @apply shadow-lg shadow-orange-100;
+}
+
+label {
+  @apply select-none;
+}
